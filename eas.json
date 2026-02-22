@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "android": {
-        "credentialsSource": "local"
+        "credentialsSource": "remote"
       },
       "ios": {
         "credentialsSource": "remote"
@@ -17,30 +17,20 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "credentialsSource": "local"
-      },
-      "ios": {
-        "credentialsSource": "remote"
-      }
-    },
-    "production": {
-      "android": {
-        "credentialsSource": "local"
-      },
-      "ios": {
-        "credentialsSource": "remote"
-      }
-    },
-    "apk": {
-      "android": {
         "buildType": "apk",
-        "credentialsSource": "local"
+        "credentialsSource": "remote"
+      },
+      "ios": {
+        "credentialsSource": "remote"
       }
-    }
-  },
-  "submit": {
+    },
     "production": {
-      "ios": {}
+      "android": {
+        "credentialsSource": "remote"
+      },
+      "ios": {
+        "credentialsSource": "remote"
+      }
     }
   }
 }

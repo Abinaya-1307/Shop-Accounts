@@ -29,11 +29,10 @@ export default function ReportsScreen() {
   }, [transactions]);
 
   const topExpenses = useMemo(() => {
-    // In a real app, we'd group by category or item name
+    // Group by item name using the denormalized itemName field
     const itemTotals: Record<string, number> = {};
     transactions.forEach((t: any) => {
-      // For demo, we'll use name if we had it, or just item_id
-      const label = t.itemId; // Simplified
+      const label = t.itemName || t.itemId;
       itemTotals[label] = (itemTotals[label] || 0) + t.totalCost;
     });
     return Object.entries(itemTotals)
@@ -78,7 +77,7 @@ export default function ReportsScreen() {
               <View key={id} style={[styles.expenseRow, index === topExpenses.length - 1 && styles.lastRow]}>
                 <View style={styles.expenseLabelContainer}>
                   <View style={[styles.colorIndicator, { backgroundColor: colors.primary }]} />
-                  <Text style={styles.expenseLabel}>Item {id.substring(0, 5)}</Text>
+                  <Text style={styles.expenseLabel}>{id}</Text>
                 </View>
                 <Text style={styles.expenseValue}>₹ {total.toFixed(2)}</Text>
               </View>

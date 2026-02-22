@@ -6,43 +6,41 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  Platform,
 } from 'react-native';
 import { Container, Card, Avatar } from '@/components/ui';
 import { colors, typography, spacing, borderRadius, shadows } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { useTransactions, useItems } from '@/hooks/useData';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useShopContext } from '@/context/ShopContext';
 
 export default function DashboardScreen() {
   const { data: transactions = [], isLoading: txnsLoading } = useTransactions(10);
   const { data: items = [] } = useItems();
+  const { getMonthlyTotal, getRecentTransactions } = useShopContext();
 
-  const currentMonthTotal = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    return transactions
-      .filter((t: any) => {
-        const d = new Date(t.date);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      })
-      .reduce((sum: number, t: any) => sum + t.totalCost, 0);
-  }, [transactions]);
+  // ── Dynamic date values ─────────────────────────────────────────────────
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const prevMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
 
-  const lastMonthTotal = useMemo(() => {
-    const now = new Date();
-    const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
-    const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-    
-    // Note: We only have limited transactions fetched. In a real app, we'd query for last month specifically.
-    // For MVP, we'll just sum what we have.
-    return transactions
-      .filter((t: any) => {
-        const d = new Date(t.date);
-        return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear;
-      })
-      .reduce((sum: number, t: any) => sum + t.totalCost, 0);
-  }, [transactions]);
+  const currentMonthLabel = now.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }); // "Feb 2026"
+  const prevMonthLabel = new Date(prevMonthYear, prevMonth, 1).toLocaleDateString('en-IN', { month: 'short' }); // "Jan"
+
+  const currentMonthTotal = useMemo(
+    () => getMonthlyTotal(currentMonth, currentYear),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getMonthlyTotal, transactions]
+  );
+
+  const lastMonthTotal = useMemo(
+    () => getMonthlyTotal(prevMonth, prevMonthYear),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getMonthlyTotal, transactions]
+  );
 
   const diff = currentMonthTotal - lastMonthTotal;
 
@@ -92,7 +90,7 @@ export default function DashboardScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.monthSelector}>
-            <Text style={styles.monthText}>Feb 2026</Text>
+            <Text style={styles.monthText}>{currentMonthLabel}</Text>
             <Ionicons name="chevron-down" size={20} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.settingsIcon}>
@@ -114,14 +112,14 @@ export default function DashboardScreen() {
               <View style={styles.trendBadgeSuccess}>
                 <Ionicons name="trending-down" size={16} color={colors.success} />
                 <Text style={styles.trendTextSuccess}>
-                  ₹ {Math.abs(diff).toLocaleString()} less than Jan
+                  ₹ {Math.abs(diff).toLocaleString()} less than {prevMonthLabel}
                 </Text>
               </View>
             ) : (
               <View style={styles.trendBadgeError}>
                 <Ionicons name="trending-up" size={16} color="#FF9A9E" />
                 <Text style={styles.trendTextError}>
-                  ₹ {diff.toLocaleString()} more than Jan
+                  ₹ {diff.toLocaleString()} more than {prevMonthLabel}
                 </Text>
               </View>
             )}

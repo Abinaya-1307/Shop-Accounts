@@ -1,85 +1,59 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { blink } from '@/lib/blink';
+import { useMemo, useCallback, useState } from 'react';
+import { useShopContext } from '@/context/ShopContext';
+import type { AddPurchasePayload } from '@/types';
 
+/**
+ * Returns all items from the local ShopContext store.
+ * Matches the { data, isLoading } shape used by the UI components.
+ */
 export function useItems() {
-  return useQuery({
-    queryKey: ['items'],
-    queryFn: async () => {
-      const { data } = await blink.db.items.list();
-      return data || [];
-    },
-  });
+  const { items, isLoading } = useShopContext();
+  return { data: items, isLoading };
 }
 
+/**
+ * Returns all shops from the local ShopContext store.
+ */
 export function useShops() {
-  return useQuery({
-    queryKey: ['shops'],
-    queryFn: async () => {
-      const { data } = await blink.db.shops.list();
-      return data || [];
-    },
-  });
+  const { shops, isLoading } = useShopContext();
+  return { data: shops, isLoading };
 }
 
+/**
+ * Returns the most recent `limit` transactions, sorted newest-first.
+ * Matches the { data, isLoading } shape used by the UI components.
+ */
 export function useTransactions(limit = 10) {
-  return useQuery({
-    queryKey: ['transactions', limit],
-    queryFn: async () => {
-      const { data } = await blink.db.transactions.list({
-        limit,
-        sort: { date: 'desc' },
-      });
-      return data || [];
-    },
-  });
+  const { transactions, isLoading } = useShopContext();
+
+  const data = useMemo(() => {
+    return [...transactions]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, limit);
+  }, [transactions, limit]);
+
+  return { data, isLoading };
 }
 
+/**
+ * Returns a mutation-like object whose mutateAsync calls addPurchase on the context.
+ * Matches the interface used by add.tsx: `await createTxn.mutateAsync(payload)`
+ */
 export function useCreateTransaction() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (transaction: any) => {
-      const { item, shop, ...txnData } = transaction;
-      
-      // 1. Ensure item exists or create it
-      let itemId = item.id;
-      if (!itemId) {
-        itemId = `item_${Date.now()}`;
-        await blink.db.items.create({
-          id: itemId,
-          name: item.name,
-          unit: txnData.unit || 'kg',
-          lastPrice: txnData.pricePerUnit,
-          lastPurchasedDate: txnData.date,
-        });
-      } else {
-        // Update item's last price
-        await blink.db.items.update(itemId, {
-          lastPrice: txnData.pricePerUnit,
-          lastPurchasedDate: txnData.date,
-        });
-      }
+  const { addPurchase } = useShopContext();
+  const [isPending, setIsPending] = useState(false);
 
-      // 2. Ensure shop exists or create it
-      let shopId = shop?.id;
-      if (shop?.name && !shopId) {
-        shopId = `shop_${Date.now()}`;
-        await blink.db.shops.create({
-          id: shopId,
-          name: shop.name,
-        });
+  const mutateAsync = useCallback(
+    async (payload: AddPurchasePayload) => {
+      setIsPending(true);
+      try {
+        await addPurchase(payload);
+      } finally {
+        setIsPending(false);
       }
+    },
+    [addPurchase]
+  );
 
-      // 3. Create transaction
-      return await blink.db.transactions.create({
-        ...txnData,
-        itemId,
-        shopId,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['items'] });
-      queryClient.invalidateQueries({ queryKey: ['shops'] });
-    },
-  });
+  return { mutateAsync, isPending };
 }

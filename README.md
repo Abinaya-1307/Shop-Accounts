@@ -68,6 +68,12 @@ The app will be available at `http://localhost:3000`
 1. Use `npm install` (slower but more compatible)
 2. Run `npm run setup` after installing new native dependencies
 
+### APK Build
+1. npm install -g eas-cli
+2. eas login
+3. eas build:configure (first time only)
+4. eas build -p android --profile preview
+
 ## Notes for AI Agents
 
 - **Fast setup**: Use `bun install` then `npm run dev`
