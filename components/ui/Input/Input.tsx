@@ -53,7 +53,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  interpolate,
   interpolateColor,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -78,36 +77,7 @@ export function Input({
   ...textInputProps
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
-  const labelPosition = useSharedValue(value ? 1 : 0);
   const borderColor = useSharedValue(0);
-
-  // Animate label position (floating label)
-  const labelStyle = useAnimatedStyle(() => {
-    const shouldFloat = isFocused || value.length > 0;
-    labelPosition.value = withTiming(shouldFloat ? 1 : 0, {
-      duration: animationDurations.fast,
-      easing: animationEasing.easeOut,
-    });
-
-    return {
-      transform: [
-        {
-          translateY: interpolate(
-            labelPosition.value,
-            [0, 1],
-            [0, -28]
-          ),
-        },
-        {
-          scale: interpolate(
-            labelPosition.value,
-            [0, 1],
-            [1, 0.85]
-          ),
-        },
-      ],
-    };
-  });
 
   // Animate border color on focus
   const containerStyle = useAnimatedStyle(() => {
@@ -143,6 +113,18 @@ export function Input({
 
   return (
     <View style={styles.wrapper}>
+      {label && (
+        <Text
+          style={[
+            styles.label,
+            isFocused && styles.labelFocused,
+            error && styles.labelError,
+            disabled && styles.labelDisabled,
+          ]}
+        >
+          {label}
+        </Text>
+      )}
       <Animated.View
         style={[
           styles.container,
@@ -159,26 +141,12 @@ export function Input({
         )}
 
         <View style={styles.inputWrapper}>
-          {label && (
-            <Animated.Text
-              style={[
-                styles.label,
-                labelStyle,
-                isFocused && styles.labelFocused,
-                error && styles.labelError,
-                disabled && styles.labelDisabled,
-              ]}
-            >
-              {label}
-            </Animated.Text>
-          )}
-
           <TextInput
             value={value}
             onChangeText={onChangeText}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            placeholder={label ? (isFocused || !value ? placeholder : undefined) : placeholder}
+            placeholder={placeholder}
             placeholderTextColor={colors.textTertiary}
             editable={!disabled}
             multiline={multiline}
@@ -260,17 +228,12 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flex: 1,
     justifyContent: 'center',
-    paddingTop: spacing.sm,
   },
 
   label: {
-    ...typography.body,
+    ...typography.caption,
     color: colors.textSecondary,
-    position: 'absolute',
-    left: 0,
-    top: '50%',
-    marginTop: -12, // Half of line height
-    transformOrigin: 'left center',
+    marginBottom: spacing.xs,
   },
 
   labelFocused: {
@@ -291,7 +254,6 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
     minHeight: 24,
-    paddingTop: spacing.xs,
   },
 
   inputWithLeftIcon: {

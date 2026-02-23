@@ -13,6 +13,8 @@ export default function RootLayout() {
         <Stack.Screen name="+not-found" />
         <Stack.Screen name="item/[id]" />
         <Stack.Screen name="shop-session" />
+        <Stack.Screen name="manage-items" />
+        <Stack.Screen name="manage-shops" />
       </Stack>
       <StatusBar style="auto" />
     </ShopProvider>

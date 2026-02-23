@@ -7,6 +7,9 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:3000"
+      },
       "android": {
         "credentialsSource": "remote"
       },
@@ -16,6 +19,9 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://shop-account-backend.onrender.com"
+      },
       "android": {
         "buildType": "apk",
         "credentialsSource": "remote"
@@ -25,6 +31,9 @@
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://shop-account-backend.onrender.com"
+      },
       "android": {
         "credentialsSource": "remote"
       },

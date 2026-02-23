@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import {
   View,
   Text,
@@ -6,168 +7,248 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  Platform,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
 } from 'react-native';
-import { Container, Card, Avatar } from '@/components/ui';
-import { colors, typography, spacing, borderRadius, shadows } from '@/constants/design';
+import { Container, Card } from '@/components/ui';
+import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
-import { useTransactions, useItems } from '@/hooks/useData';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useShopContext } from '@/context/ShopContext';
+import { API_URL as API } from '@/lib/config';
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const getItemIcon = (name: string): any => {
+  const n = name.toLowerCase();
+  if (n.includes('milk'))  return 'water';
+  if (n.includes('sugar')) return 'cube';
+  if (n.includes('oil'))   return 'flask';
+  if (n.includes('rice'))  return 'nutrition';
+  if (n.includes('dal') || n.includes('dhal')) return 'leaf';
+  return 'basket';
+};
+
+// Build the last 13 months for the picker
+function buildMonthOptions() {
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 13; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    options.push({ month: d.getMonth(), year: d.getFullYear() });
+  }
+  return options;
+}
 
 export default function DashboardScreen() {
-  const { data: transactions = [], isLoading: txnsLoading } = useTransactions(10);
-  const { data: items = [] } = useItems();
-  const { getMonthlyTotal, getRecentTransactions } = useShopContext();
-
-  // ── Dynamic date values ─────────────────────────────────────────────────
   const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-  const prevMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
 
-  const currentMonthLabel = now.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }); // "Feb 2026"
-  const prevMonthLabel = new Date(prevMonthYear, prevMonth, 1).toLocaleDateString('en-IN', { month: 'short' }); // "Jan"
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  const [selectedYear, setSelectedYear]   = useState(now.getFullYear());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
 
-  const currentMonthTotal = useMemo(
-    () => getMonthlyTotal(currentMonth, currentYear),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getMonthlyTotal, transactions]
-  );
+  const prevMonth     = selectedMonth === 0 ? 11 : selectedMonth - 1;
+  const prevMonthYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+  const selectedMonthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
+  const prevMonthLabel     = MONTH_NAMES[prevMonth];
 
-  const lastMonthTotal = useMemo(
-    () => getMonthlyTotal(prevMonth, prevMonthYear),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getMonthlyTotal, transactions]
-  );
+  const [currentMonthTotal, setCurrentMonthTotal]   = useState(0);
+  const [prevMonthTotal, setPrevMonthTotal]         = useState(0);
+  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+  const [isLoading, setIsLoading]       = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const diff = currentMonthTotal - lastMonthTotal;
+  const loadDashboard = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setIsRefreshing(true);
+    else setIsLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/dashboard`, {
+        params: { month: selectedMonth, year: selectedYear },
+      });
+      setCurrentMonthTotal(data.currentMonthTotal ?? 0);
+      setPrevMonthTotal(data.prevMonthTotal ?? 0);
+      setRecentTransactions(data.recentTransactions ?? []);
+    } catch (err) {
+      console.error('Dashboard load error:', err);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [selectedMonth, selectedYear]);
 
-  const getItemIcon = (itemId: string) => {
-    const item = items.find((i: any) => i.id === itemId);
-    // Placeholder logic for icons
-    if (item?.name.toLowerCase().includes('milk')) return 'water';
-    if (item?.name.toLowerCase().includes('sugar')) return 'cube';
-    if (item?.name.toLowerCase().includes('oil')) return 'flask';
-    return 'basket';
-  };
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
-  const renderTransaction = ({ item }: { item: any }) => {
-    const itemObj = items.find((i: any) => i.id === item.itemId);
-    return (
-      <Card style={styles.txnCard}>
-        <View style={styles.txnRow}>
-          <View style={styles.iconContainer}>
-            <Ionicons name={getItemIcon(item.itemId) as any} size={24} color={colors.primary} />
-          </View>
-          <View style={styles.txnInfo}>
-            <Text style={styles.itemName}>{itemObj?.name || 'Item'}</Text>
-            <Text style={styles.itemDate}>
-              {new Date(item.date).toLocaleDateString()} at {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-          </View>
-          <View style={styles.txnAmountContainer}>
-            <Text style={styles.txnAmount}>₹ {item.totalCost.toFixed(2)}</Text>
-            {item.priceTrend === 'increase' && (
-              <Ionicons name="arrow-up" size={12} color={colors.error} />
-            )}
-            {item.priceTrend === 'decrease' && (
-              <Ionicons name="arrow-down" size={12} color={colors.success} />
-            )}
-          </View>
+  const diff = currentMonthTotal - prevMonthTotal;
+  const monthOptions = buildMonthOptions();
+
+  const renderTransaction = ({ item }: { item: any }) => (
+    <Card style={styles.txnCard}>
+      <View style={styles.txnRow}>
+        <View style={styles.iconContainer}>
+          <Ionicons name={getItemIcon(item.item_name)} size={24} color={colors.primary} />
         </View>
-      </Card>
-    );
-  };
+        <View style={styles.txnInfo}>
+          <Text style={styles.itemName}>{item.item_name}</Text>
+          <Text style={styles.itemDate}>
+            {new Date(item.date).toLocaleDateString('en-IN')} ·{' '}
+            {new Date(item.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+            {item.shop_name ? `  ·  ${item.shop_name}` : ''}
+          </Text>
+        </View>
+        <View style={styles.txnAmountContainer}>
+          <Text style={styles.txnAmount}>₹ {item.total_cost.toFixed(2)}</Text>
+          {item.price_trend === 'increase' && (
+            <Ionicons name="arrow-up" size={12} color={colors.error} />
+          )}
+          {item.price_trend === 'decrease' && (
+            <Ionicons name="arrow-down" size={12} color={colors.success} />
+          )}
+        </View>
+      </View>
+    </Card>
+  );
 
   return (
     <Container safeArea edges={['top']}>
-      <ScrollView 
+      {/* ── Month Picker Modal ── */}
+      <Modal
+        visible={showMonthPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMonthPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMonthPicker(false)}
+        >
+          <View style={styles.monthPickerCard}>
+            <Text style={styles.monthPickerTitle}>Select Month</Text>
+            {monthOptions.map((opt) => {
+              const isSelected = opt.month === selectedMonth && opt.year === selectedYear;
+              return (
+                <TouchableOpacity
+                  key={`${opt.year}-${opt.month}`}
+                  style={[styles.monthOption, isSelected && styles.monthOptionActive]}
+                  onPress={() => {
+                    setSelectedMonth(opt.month);
+                    setSelectedYear(opt.year);
+                    setShowMonthPicker(false);
+                  }}
+                >
+                  <Text style={[styles.monthOptionText, isSelected && styles.monthOptionTextActive]}>
+                    {MONTH_NAMES[opt.month]} {opt.year}
+                  </Text>
+                  {isSelected && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.monthSelector}>
-            <Text style={styles.monthText}>{currentMonthLabel}</Text>
-            <Ionicons name="chevron-down" size={20} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingsIcon}>
-            <Ionicons name="settings-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Budget Card */}
-        <LinearGradient
-          colors={[colors.primary, colors.primaryLight]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.budgetCard}
-        >
-          <Text style={styles.budgetLabel}>Total Spent this Month</Text>
-          <Text style={styles.budgetValue}>₹ {currentMonthTotal.toLocaleString()}</Text>
-          <View style={styles.budgetFooter}>
-            {diff <= 0 ? (
-              <View style={styles.trendBadgeSuccess}>
-                <Ionicons name="trending-down" size={16} color={colors.success} />
-                <Text style={styles.trendTextSuccess}>
-                  ₹ {Math.abs(diff).toLocaleString()} less than {prevMonthLabel}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.trendBadgeError}>
-                <Ionicons name="trending-up" size={16} color="#FF9A9E" />
-                <Text style={styles.trendTextError}>
-                  ₹ {diff.toLocaleString()} more than {prevMonthLabel}
-                </Text>
-              </View>
-            )}
-          </View>
-        </LinearGradient>
-
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity style={styles.actionButton}>
-            <View style={[styles.actionIcon, { backgroundColor: '#F0F9FF' }]}>
-              <Ionicons name="camera" size={24} color="#0EA5E9" />
-            </View>
-            <Text style={styles.actionLabel}>Scan Bill</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
-            <View style={[styles.actionIcon, { backgroundColor: '#F0FDF4' }]}>
-              <Ionicons name="mic" size={24} color="#10B981" />
-            </View>
-            <Text style={styles.actionLabel}>Voice</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
-            <View style={[styles.actionIcon, { backgroundColor: '#FEF2F2' }]}>
-              <Ionicons name="calculator" size={24} color="#EF4444" />
-            </View>
-            <Text style={styles.actionLabel}>Calculator</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Recent Transactions */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Purchases</Text>
-          <TouchableOpacity onPress={() => {}}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-
-        {transactions.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <Ionicons name="receipt-outline" size={48} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>No purchases yet. Tap (+) to add one!</Text>
-          </Card>
-        ) : (
-          <FlatList
-            data={transactions}
-            renderItem={renderTransaction}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadDashboard(true)}
+            tintColor={colors.primary}
           />
+        }
+      >
+        {/* ── Header ── */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.monthSelector}
+            onPress={() => setShowMonthPicker(true)}
+          >
+            <Text style={styles.monthText}>{selectedMonthLabel}</Text>
+            <Ionicons name="chevron-down" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.refreshIcon} onPress={() => loadDashboard(true)}>
+            <Ionicons name="refresh-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <>
+            {/* ── Budget Card ── */}
+            <LinearGradient
+              colors={[colors.primary, colors.primaryLight]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.budgetCard}
+            >
+              <Text style={styles.budgetLabel}>Total Spent — {selectedMonthLabel}</Text>
+              <Text style={styles.budgetValue}>
+                ₹ {currentMonthTotal.toLocaleString('en-IN')}
+              </Text>
+              <View style={styles.budgetFooter}>
+                {diff <= 0 ? (
+                  <View style={styles.trendBadgeSuccess}>
+                    <Ionicons name="trending-down" size={16} color={colors.success} />
+                    <Text style={styles.trendTextSuccess}>
+                      ₹{Math.abs(diff).toLocaleString('en-IN')} less than {prevMonthLabel}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.trendBadgeError}>
+                    <Ionicons name="trending-up" size={16} color="#FF9A9E" />
+                    <Text style={styles.trendTextError}>
+                      ₹{diff.toLocaleString('en-IN')} more than {prevMonthLabel}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </LinearGradient>
+
+            {/* ── Quick Actions ── */}
+            <View style={styles.quickActions}>
+              <TouchableOpacity style={styles.actionButton}>
+                <View style={[styles.actionIcon, { backgroundColor: '#F0F9FF' }]}>
+                  <Ionicons name="camera" size={24} color="#0EA5E9" />
+                </View>
+                <Text style={styles.actionLabel}>Scan Bill</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton}>
+                <View style={[styles.actionIcon, { backgroundColor: '#F0FDF4' }]}>
+                  <Ionicons name="mic" size={24} color="#10B981" />
+                </View>
+                <Text style={styles.actionLabel}>Voice</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton}>
+                <View style={[styles.actionIcon, { backgroundColor: '#FEF2F2' }]}>
+                  <Ionicons name="calculator" size={24} color="#EF4444" />
+                </View>
+                <Text style={styles.actionLabel}>Calculator</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Recent Transactions ── */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Purchases</Text>
+            </View>
+
+            {recentTransactions.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <Ionicons name="receipt-outline" size={48} color={colors.textTertiary} />
+                <Text style={styles.emptyText}>No purchases for this month.</Text>
+              </Card>
+            ) : (
+              <FlatList
+                data={recentTransactions}
+                renderItem={renderTransaction}
+                keyExtractor={(item) => item.id}
+                scrollEnabled={false}
+              />
+            )}
+          </>
         )}
       </ScrollView>
     </Container>
@@ -199,7 +280,7 @@ const styles = StyleSheet.create({
     ...typography.bodyBold,
     marginRight: spacing.xs,
   },
-  settingsIcon: {
+  refreshIcon: {
     padding: spacing.sm,
   },
   budgetCard: {
@@ -207,17 +288,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xxl,
     padding: spacing.xl,
     justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   budgetLabel: {
     ...typography.caption,
@@ -281,6 +356,12 @@ const styles = StyleSheet.create({
     ...typography.captionBold,
     color: colors.textSecondary,
   },
+  loadingState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.xxl * 2,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -290,10 +371,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-  },
-  seeAllText: {
-    ...typography.captionBold,
-    color: colors.primary,
   },
   txnCard: {
     marginBottom: spacing.sm,
@@ -343,5 +420,51 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: 'center',
     marginTop: spacing.md,
+  },
+  /* ── Month Picker Modal ── */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-start',
+    paddingTop: 100,
+    paddingHorizontal: spacing.lg,
+  },
+  monthPickerCard: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.xl,
+    paddingVertical: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    maxHeight: 420,
+  },
+  monthPickerTitle: {
+    ...typography.h3,
+    color: colors.text,
+    textAlign: 'center',
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.xs,
+  },
+  monthOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  monthOptionActive: {
+    backgroundColor: colors.primaryTint,
+  },
+  monthOptionText: {
+    ...typography.body,
+    color: colors.text,
+  },
+  monthOptionTextActive: {
+    ...typography.bodyBold,
+    color: colors.primary,
   },
 });

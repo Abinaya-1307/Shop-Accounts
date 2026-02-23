@@ -1,49 +1,77 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import axios from 'axios';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
-  Platform,
   Alert,
 } from 'react-native';
-import { Container, Input, Button, Card } from '@/components/ui';
-import { colors, typography, spacing, borderRadius, shadows, touchTargets } from '@/constants/design';
+import { Container, Input, Button } from '@/components/ui';
+import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
-import { useItems, useShops, useCreateTransaction } from '@/hooks/useData';
+import { useCreateTransaction } from '@/hooks/useData';
 import { useRouter } from 'expo-router';
+import { API_URL as API } from '@/lib/config';
 
 export default function AddScreen() {
   const router = useRouter();
-  const { data: items = [] } = useItems();
-  const { data: shops = [] } = useShops();
   const createTxn = useCreateTransaction();
 
   const [itemName, setItemName] = useState('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [itemSuggestions, setItemSuggestions] = useState<any[]>([]);
+  const [showItemSuggestions, setShowItemSuggestions] = useState(false);
+
   const [pricePerUnit, setPricePerUnit] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unit, setUnit] = useState('kg');
+
   const [shopName, setShopName] = useState('');
   const [selectedShop, setSelectedShop] = useState<any>(null);
-  const [showItemSuggestions, setShowItemSuggestions] = useState(false);
+  const [shopSuggestions, setShopSuggestions] = useState<any[]>([]);
   const [showShopSuggestions, setShowShopSuggestions] = useState(false);
 
-  const filteredItems = useMemo(() => {
-    if (!itemName) return [];
-    return items.filter((item: any) =>
-      item.name.toLowerCase().includes(itemName.toLowerCase())
-    );
-  }, [itemName, items]);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const filteredShops = useMemo(() => {
-    if (!shopName) return [];
-    return shops.filter((shop: any) =>
-      shop.name.toLowerCase().includes(shopName.toLowerCase())
-    );
-  }, [shopName, shops]);
+  // Debounced item search
+  const itemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!itemName || itemName.length < 1) {
+      setItemSuggestions([]);
+      return;
+    }
+    if (itemDebounce.current) clearTimeout(itemDebounce.current);
+    itemDebounce.current = setTimeout(async () => {
+      try {
+        const { data } = await axios.get(`${API}/items/search`, { params: { q: itemName } });
+        setItemSuggestions(data);
+      } catch {
+        setItemSuggestions([]);
+      }
+    }, 300);
+    return () => { if (itemDebounce.current) clearTimeout(itemDebounce.current); };
+  }, [itemName]);
+
+  // Debounced shop search
+  const shopDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!shopName || shopName.length < 1) {
+      setShopSuggestions([]);
+      return;
+    }
+    if (shopDebounce.current) clearTimeout(shopDebounce.current);
+    shopDebounce.current = setTimeout(async () => {
+      try {
+        const { data } = await axios.get(`${API}/shops/search`, { params: { q: shopName } });
+        setShopSuggestions(data);
+      } catch {
+        setShopSuggestions([]);
+      }
+    }, 300);
+    return () => { if (shopDebounce.current) clearTimeout(shopDebounce.current); };
+  }, [shopName]);
 
   const totalCost = useMemo(() => {
     const p = parseFloat(pricePerUnit) || 0;
@@ -54,7 +82,7 @@ export default function AddScreen() {
   const priceDiff = useMemo(() => {
     if (!selectedItem || !pricePerUnit) return null;
     const current = parseFloat(pricePerUnit);
-    const last = selectedItem.lastPrice;
+    const last = selectedItem.last_price;
     if (!last) return null;
     return current - last;
   }, [selectedItem, pricePerUnit]);
@@ -65,79 +93,96 @@ export default function AddScreen() {
       return;
     }
 
-    const priceTrend = !priceDiff ? 'stable' : priceDiff > 0 ? 'increase' : 'decrease';
+    const priceTrend: 'stable' | 'increase' | 'decrease' = !priceDiff ? 'stable' : priceDiff > 0 ? 'increase' : 'decrease';
+    const payload = {
+      id: `txn_${Date.now()}`,
+      date: new Date().toISOString(),
+      item: selectedItem
+        ? { id: selectedItem.id, name: selectedItem.name }
+        : { name: itemName },
+      shop: selectedShop
+        ? { id: selectedShop.id, name: selectedShop.name }
+        : shopName ? { name: shopName } : null,
+      pricePerUnit: parseFloat(pricePerUnit),
+      quantity: parseFloat(quantity),
+      totalCost: parseFloat(totalCost),
+      unit,
+      priceTrend,
+    };
 
+    setIsSaving(true);
     try {
+      await axios.post(`${API}/new`, payload);
+
+      // Keep local context in sync so History/Reports tabs stay updated
       await createTxn.mutateAsync({
-        id: `txn_${Date.now()}`,
-        date: new Date().toISOString(),
-        item: selectedItem || { name: itemName },
-        shop: selectedShop || { name: shopName },
-        pricePerUnit: parseFloat(pricePerUnit),
-        quantity: parseFloat(quantity),
-        totalCost: parseFloat(totalCost),
-        unit,
-        priceTrend,
+        ...payload,
+        item: payload.item,
+        shop: payload.shop ?? undefined,
       });
+
       router.replace('/(tabs)');
     } catch (error) {
       console.error('Failed to save transaction:', error);
-      Alert.alert('Error', 'Failed to save purchase');
+      Alert.alert('Error', 'Failed to save purchase. Is the server running?');
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  const UNITS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'nos'];
 
   return (
     <Container safeArea padding="lg">
       <View style={styles.header}>
         <Text style={styles.title}>New Purchase</Text>
-        <TouchableOpacity onPress={handleSave}>
-          <Text style={styles.saveText}>Save</Text>
+        <TouchableOpacity onPress={handleSave} disabled={isSaving}>
+          <Text style={[styles.saveText, isSaving && { opacity: 0.4 }]}>Save</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        keyboardShouldPersistTaps="handled" 
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Item Search */}
-        <View style={styles.inputGroup}>
-          <Input
-            label="Item Name"
-            placeholder="Search for an item (e.g. Sugar)"
-            value={itemName}
-            onChangeText={(text) => {
-              setItemName(text);
-              setShowItemSuggestions(true);
-              setSelectedItem(null);
-            }}
-            onFocus={() => setShowItemSuggestions(true)}
-            leftIcon={<Ionicons name="search-outline" size={20} color={colors.textTertiary} />}
-          />
-          {showItemSuggestions && filteredItems.length > 0 && (
-            <Card style={styles.suggestionsCard}>
-              {filteredItems.map((item: any) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.suggestionItem}
-                  onPress={() => {
-                    setSelectedItem(item);
-                    setItemName(item.name);
-                    setUnit(item.unit || 'kg');
-                    setShowItemSuggestions(false);
-                  }}
-                >
-                  <Text style={styles.suggestionText}>{item.name}</Text>
-                  {item.lastPrice && (
-                    <Text style={styles.suggestionPrice}>Last: ₹{item.lastPrice}</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </Card>
-          )}
-        </View>
+        {/* ── Item Search ── */}
+        <Text style={styles.fieldLabel}>Item Name</Text>
+        <Input
+          placeholder="Search for an item (e.g. Sugar)"
+          value={itemName}
+          onChangeText={(text) => {
+            setItemName(text);
+            setShowItemSuggestions(true);
+            setSelectedItem(null);
+          }}
+          onFocus={() => setShowItemSuggestions(true)}
+          leftIcon={<Ionicons name="search-outline" size={20} color={colors.textTertiary} />}
+        />
+        {showItemSuggestions && itemSuggestions.length > 0 && (
+          <View style={styles.suggestionsBox}>
+            {itemSuggestions.map((item: any) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.suggestionItem}
+                onPress={() => {
+                  setSelectedItem(item);
+                  setItemName(item.name);
+                  setUnit(item.unit || 'kg');
+                  setShowItemSuggestions(false);
+                  setItemSuggestions([]);
+                }}
+              >
+                <Text style={styles.suggestionText}>{item.name}</Text>
+                {item.last_price && (
+                  <Text style={styles.suggestionPrice}>Last: ₹{item.last_price}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        {/* Price Context Widget */}
+        {/* ── Price Context Widget ── */}
         {selectedItem && (
           <View style={styles.contextWidget}>
             <View style={styles.contextRow}>
@@ -145,19 +190,19 @@ export default function AddScreen() {
               <Text style={styles.contextTitle}>Price Context</Text>
             </View>
             <Text style={styles.contextText}>
-              Last Purchase: <Text style={styles.boldText}>₹{selectedItem.lastPrice}</Text>
-              {selectedItem.lastPurchasedDate && (
-                <Text> (on {new Date(selectedItem.lastPurchasedDate).toLocaleDateString()})</Text>
+              Last Purchase: <Text style={styles.boldText}>₹{selectedItem.last_price}</Text>
+              {selectedItem.last_purchased_date && (
+                <Text> (on {new Date(selectedItem.last_purchased_date).toLocaleDateString()})</Text>
               )}
             </Text>
           </View>
         )}
 
-        {/* Price & Quantity */}
+        {/* ── Rate & Quantity in a row ── */}
         <View style={styles.row}>
-          <View style={[styles.inputGroup, { flex: 2, marginRight: spacing.sm }]}>
+          <View style={{ flex: 2, marginRight: spacing.sm }}>
+            <Text style={styles.fieldLabel}>Rate per Unit (₹)</Text>
             <Input
-              label="Rate per Unit (₹)"
               placeholder="0.00"
               value={pricePerUnit}
               onChangeText={setPricePerUnit}
@@ -176,9 +221,9 @@ export default function AddScreen() {
               </View>
             )}
           </View>
-          <View style={[styles.inputGroup, { flex: 1 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>Qty</Text>
             <Input
-              label="Qty"
               placeholder="1"
               value={quantity}
               onChangeText={setQuantity}
@@ -187,60 +232,63 @@ export default function AddScreen() {
           </View>
         </View>
 
-        {/* Unit & Shop */}
-        <View style={styles.row}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: spacing.sm }]}>
-            <Input
-              label="Unit"
-              value={unit}
-              onChangeText={setUnit}
-              placeholder="kg, ltr, etc."
-            />
-          </View>
-          <View style={[styles.inputGroup, { flex: 2 }]}>
-            <Input
-              label="Shop Name"
-              placeholder="e.g. Siva Traders"
-              value={shopName}
-              onChangeText={(text) => {
-                setShopName(text);
-                setShowShopSuggestions(true);
-                setSelectedShop(null);
-              }}
-              onFocus={() => setShowShopSuggestions(true)}
-            />
-            {showShopSuggestions && filteredShops.length > 0 && (
-              <Card style={styles.suggestionsCard}>
-                {filteredShops.map((shop: any) => (
-                  <TouchableOpacity
-                    key={shop.id}
-                    style={styles.suggestionItem}
-                    onPress={() => {
-                      setSelectedShop(shop);
-                      setShopName(shop.name);
-                      setShowShopSuggestions(false);
-                    }}
-                  >
-                    <Text style={styles.suggestionText}>{shop.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </Card>
-            )}
-          </View>
+        {/* ── Unit Pills ── */}
+        <Text style={styles.fieldLabel}>Unit</Text>
+        <View style={styles.unitRow}>
+          {UNITS.map((u) => (
+            <TouchableOpacity
+              key={u}
+              style={[styles.unitPill, unit === u && styles.unitPillActive]}
+              onPress={() => setUnit(u)}
+            >
+              <Text style={[styles.unitPillText, unit === u && styles.unitPillTextActive]}>{u}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Total Display */}
+        {/* ── Shop Name (full width, below other fields) ── */}
+        <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>Shop Name</Text>
+        <Input
+          placeholder="e.g. Siva Traders"
+          value={shopName}
+          onChangeText={(text) => {
+            setShopName(text);
+            setShowShopSuggestions(true);
+            setSelectedShop(null);
+          }}
+          onFocus={() => setShowShopSuggestions(true)}
+          leftIcon={<Ionicons name="storefront-outline" size={20} color={colors.textTertiary} />}
+        />
+        {showShopSuggestions && shopSuggestions.length > 0 && (
+          <View style={styles.suggestionsBox}>
+            {shopSuggestions.map((shop: any) => (
+              <TouchableOpacity
+                key={shop.id}
+                style={styles.suggestionItem}
+                onPress={() => {
+                  setSelectedShop(shop);
+                  setShopName(shop.name);
+                  setShowShopSuggestions(false);
+                  setShopSuggestions([]);
+                }}
+              >
+                <Text style={styles.suggestionText}>{shop.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* ── Total Display ── */}
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>Total Purchase Value</Text>
           <Text style={styles.totalValue}>₹ {totalCost}</Text>
         </View>
 
-        <Button 
-          variant="primary" 
-          size="lg" 
-          onPress={handleSave} 
-          style={styles.addButton}
-          loading={createTxn.isPending}
+        <Button
+          variant="primary"
+          size="lg"
+          onPress={handleSave}
+          loading={isSaving}
         >
           Add Item to Diary
         </Button>
@@ -267,27 +315,31 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: spacing.xxl,
   },
-  inputGroup: {
-    marginBottom: spacing.md,
-    position: 'relative',
+  fieldLabel: {
+    ...typography.captionBold,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    marginTop: spacing.sm,
   },
-  suggestionsCard: {
-    position: 'absolute',
-    top: 72,
-    left: 0,
-    right: 0,
-    zIndex: 1000,
-    padding: 0,
-    overflow: 'hidden',
+  suggestionsBox: {
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    marginTop: 4,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.white,
   },
   suggestionItem: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     flexDirection: 'row',
@@ -309,7 +361,8 @@ const styles = StyleSheet.create({
     borderColor: colors.primaryLight,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
   contextRow: {
     flexDirection: 'row',
@@ -332,12 +385,38 @@ const styles = StyleSheet.create({
   trendIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: -spacing.xs,
+    marginTop: 2,
     marginLeft: spacing.xs,
   },
   trendText: {
     ...typography.smallBold,
     marginLeft: 2,
+  },
+  unitRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    marginTop: 4,
+  },
+  unitPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  unitPillActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryTint,
+  },
+  unitPillText: {
+    ...typography.captionBold,
+    color: colors.textSecondary,
+  },
+  unitPillTextActive: {
+    color: colors.primary,
   },
   totalCard: {
     backgroundColor: colors.primaryTint,
@@ -345,7 +424,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     alignItems: 'center',
     marginBottom: spacing.xl,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
   totalLabel: {
     ...typography.caption,
@@ -356,9 +435,5 @@ const styles = StyleSheet.create({
     ...typography.display,
     color: colors.primary,
     fontSize: 32,
-  },
-  addButton: {
-    height: 56,
-    borderRadius: borderRadius.lg,
   },
 });
