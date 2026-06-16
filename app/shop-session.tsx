@@ -1,44 +1,47 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Container, Card } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
-import { useShopContext } from '@/context/ShopContext';
 import { formatDate, formatCurrency } from '@/utils/helpers';
 
+import { API_URL as API } from '@/lib/config';
+
 export default function ShopSessionScreen() {
-  /**
-   * Params passed from History page:
-   *   shopName  – e.g. "Murugan Stores"
-   *   date      – e.g. "2026-02-15"   (ISO date only, no time)
-   */
   const { shopName, date } = useLocalSearchParams<{ shopName: string; date: string }>();
   const router = useRouter();
-  const { transactions } = useShopContext();
 
-  // Filter transactions by shopName AND day
-  const sessionTransactions = useMemo(() => {
-    return transactions.filter((t) => {
-      const txnDay = new Date(t.date).toISOString().split('T')[0]; // "2026-02-15"
-      const matchShop = t.shopName === shopName;
-      const matchDate = txnDay === date;
-      // If shopName is blank/undefined, match transactions with no shop on that date
-      if (!shopName || shopName === 'Unknown Shop') {
-        return matchDate && (!t.shopName || t.shopName === 'Unknown Shop');
+  const [sessionTransactions, setSessionTransactions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const { data } = await axios.get(`${API}/transactions/session`, {
+          params: { shopName, date },
+        });
+        setSessionTransactions(data ?? []);
+      } catch (err) {
+        console.error('Session load error:', err);
+      } finally {
+        setIsLoading(false);
       }
-      return matchShop && matchDate;
-    });
-  }, [transactions, shopName, date]);
+    };
+    if (date) load();
+  }, [shopName, date]);
 
   const grandTotal = useMemo(
-    () => sessionTransactions.reduce((sum, t) => sum + t.totalCost, 0),
+    () => sessionTransactions.reduce((sum, t) => sum + t.total_cost, 0),
     [sessionTransactions]
   );
 
@@ -73,69 +76,75 @@ export default function ShopSessionScreen() {
           </View>
         </View>
 
-        {/* ── Summary Card ── */}
-        <Card style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Items Bought</Text>
-              <Text style={styles.summaryValue}>{sessionTransactions.length}</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Total Spent</Text>
-              <Text style={[styles.summaryValue, { color: colors.primary }]}>
-                {formatCurrency(grandTotal)}
-              </Text>
-            </View>
-          </View>
-        </Card>
-
-        {/* ── Item List ── */}
-        <Text style={styles.sectionTitle}>Items Purchased</Text>
-
-        {sessionTransactions.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={48} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>No items found for this session.</Text>
-          </View>
+        {isLoading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xxl }} />
         ) : (
-          sessionTransactions.map((txn) => (
-            <Card key={txn.id} style={styles.txnCard}>
-              <View style={styles.txnHeader}>
-                <Text style={styles.txnItemName}>{txn.itemName}</Text>
-                <View style={styles.trendBadge}>
-                  <Ionicons
-                    name={trendIcon(txn.priceTrend)}
-                    size={14}
-                    color={trendColor(txn.priceTrend)}
-                  />
-                  <Text style={[styles.trendLabel, { color: trendColor(txn.priceTrend) }]}>
-                    {txn.priceTrend === 'increase'
-                      ? 'Higher'
-                      : txn.priceTrend === 'decrease'
-                      ? 'Lower'
-                      : 'Same'}
+          <>
+            {/* ── Summary Card ── */}
+            <Card style={styles.summaryCard}>
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Items Bought</Text>
+                  <Text style={styles.summaryValue}>{sessionTransactions.length}</Text>
+                </View>
+                <View style={styles.summaryDivider} />
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Total Spent</Text>
+                  <Text style={[styles.summaryValue, { color: colors.primary }]}>
+                    {formatCurrency(grandTotal)}
                   </Text>
                 </View>
               </View>
-
-              <View style={styles.txnMathRow}>
-                <Text style={styles.mathText}>
-                  ₹{txn.pricePerUnit} × {txn.quantity} {txn.unit}
-                </Text>
-                <Text style={styles.mathEquals}>=</Text>
-                <Text style={styles.mathTotal}>₹{txn.totalCost.toFixed(2)}</Text>
-              </View>
             </Card>
-          ))
-        )}
 
-        {/* ── Grand Total Footer ── */}
-        {sessionTransactions.length > 0 && (
-          <View style={styles.grandTotalRow}>
-            <Text style={styles.grandTotalLabel}>Grand Total</Text>
-            <Text style={styles.grandTotalValue}>{formatCurrency(grandTotal)}</Text>
-          </View>
+            {/* ── Item List ── */}
+            <Text style={styles.sectionTitle}>Items Purchased</Text>
+
+            {sessionTransactions.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="receipt-outline" size={48} color={colors.textTertiary} />
+                <Text style={styles.emptyText}>No items found for this session.</Text>
+              </View>
+            ) : (
+              sessionTransactions.map((txn) => (
+                <Card key={txn.id} style={styles.txnCard}>
+                  <View style={styles.txnHeader}>
+                    <Text style={styles.txnItemName}>{txn.item_name}</Text>
+                    <View style={styles.trendBadge}>
+                      <Ionicons
+                        name={trendIcon(txn.price_trend)}
+                        size={14}
+                        color={trendColor(txn.price_trend)}
+                      />
+                      <Text style={[styles.trendLabel, { color: trendColor(txn.price_trend) }]}>
+                        {txn.price_trend === 'increase'
+                          ? 'Higher'
+                          : txn.price_trend === 'decrease'
+                          ? 'Lower'
+                          : 'Same'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.txnMathRow}>
+                    <Text style={styles.mathText}>
+                      ₹{txn.price_per_unit} × {txn.quantity} {txn.unit}
+                    </Text>
+                    <Text style={styles.mathEquals}>=</Text>
+                    <Text style={styles.mathTotal}>₹{txn.total_cost.toFixed(2)}</Text>
+                  </View>
+                </Card>
+              ))
+            )}
+
+            {/* ── Grand Total Footer ── */}
+            {sessionTransactions.length > 0 && (
+              <View style={styles.grandTotalRow}>
+                <Text style={styles.grandTotalLabel}>Grand Total</Text>
+                <Text style={styles.grandTotalValue}>{formatCurrency(grandTotal)}</Text>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </Container>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,32 +6,131 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Container, Card } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function SettingsScreen() {
-  const settingsGroups = [
+  const router = useRouter();
+  const [darkMode, setDarkMode] = useState(false);
+  const [language, setLanguage] = useState('English');
+
+  const handleManageItems = () => router.push('/manage-items');
+  const handleManageShops = () => router.push('/manage-shops');
+
+  const handleLanguage = () => {
+    Alert.alert('Language', 'Choose your preferred language.', [
+      {
+        text: 'English',
+        onPress: () => setLanguage('English'),
+      },
+      {
+        text: 'Tamil',
+        onPress: () => setLanguage('Tamil'),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleGoogleDrive = () => {
+    Alert.alert('Sync to Google Drive', 'This feature is coming soon!', [
+      { text: 'OK' },
+    ]);
+  };
+
+  const handlePrivacy = () => {
+    Alert.alert(
+      'Privacy Settings',
+      'Your data is stored locally and synced to your own Supabase project. No third-party services have access to your purchase history.',
+      [{ text: 'Got it' }]
+    );
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: () => {} },
+    ]);
+  };
+
+  type SettingItem = {
+    icon: string;
+    label: string;
+    color: string;
+    value?: string;
+    type?: 'switch' | 'chevron';
+    onPress?: () => void;
+    switchValue?: boolean;
+    onSwitch?: (v: boolean) => void;
+  };
+
+  type SettingGroup = {
+    title: string;
+    items: SettingItem[];
+  };
+
+  const settingsGroups: SettingGroup[] = [
     {
       title: 'Management',
       items: [
-        { icon: 'list', label: 'Manage Items', color: colors.primary },
-        { icon: 'storefront', label: 'Manage Shops', color: '#0EA5E9' },
+        {
+          icon: 'list',
+          label: 'Manage Items',
+          color: colors.primary,
+          onPress: handleManageItems,
+        },
+        {
+          icon: 'storefront',
+          label: 'Manage Shops',
+          color: '#0EA5E9',
+          onPress: handleManageShops,
+        },
       ],
     },
     {
       title: 'Data & Privacy',
       items: [
-        { icon: 'cloud-upload', label: 'Sync to Google Drive', color: '#10B981' },
-        { icon: 'shield-checkmark', label: 'Privacy Settings', color: '#8B5CF6' },
+        {
+          icon: 'cloud-upload',
+          label: 'Sync to Google Drive',
+          color: '#10B981',
+          onPress: handleGoogleDrive,
+        },
+        {
+          icon: 'shield-checkmark',
+          label: 'Privacy Settings',
+          color: '#8B5CF6',
+          onPress: handlePrivacy,
+        },
       ],
     },
     {
       title: 'App Settings',
       items: [
-        { icon: 'language', label: 'Language', value: 'English / Tamil', color: '#F59E0B' },
-        { icon: 'moon', label: 'Dark Mode', type: 'switch', color: '#374151' },
+        {
+          icon: 'language',
+          label: 'Language',
+          value: language,
+          color: '#F59E0B',
+          onPress: handleLanguage,
+        },
+        {
+          icon: 'moon',
+          label: 'Dark Mode',
+          type: 'switch',
+          color: '#374151',
+          switchValue: darkMode,
+          onSwitch: (v) => {
+            setDarkMode(v);
+            if (v) {
+              Alert.alert('Dark Mode', 'Dark mode support is coming in a future update.');
+              setDarkMode(false);
+            }
+          },
+        },
       ],
     },
   ];
@@ -41,6 +140,7 @@ export default function SettingsScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Settings</Text>
 
+        {/* Profile */}
         <View style={styles.profileSection}>
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarText}>M</Text>
@@ -62,15 +162,23 @@ export default function SettingsScreen() {
                     styles.settingItem,
                     itemIdx === group.items.length - 1 && styles.lastItem,
                   ]}
-                  disabled={item.type === 'switch'}
+                  onPress={item.type !== 'switch' ? item.onPress : undefined}
+                  activeOpacity={item.type === 'switch' ? 1 : 0.7}
                 >
-                  <View style={[styles.iconBox, { backgroundColor: item.color + '15' }]}>
+                  <View style={[styles.iconBox, { backgroundColor: item.color + '20' }]}>
                     <Ionicons name={item.icon as any} size={20} color={item.color} />
                   </View>
                   <Text style={styles.settingLabel}>{item.label}</Text>
-                  {item.value && <Text style={styles.settingValue}>{item.value}</Text>}
+                  {item.value && (
+                    <Text style={styles.settingValue}>{item.value}</Text>
+                  )}
                   {item.type === 'switch' ? (
-                    <Switch value={false} trackColor={{ true: colors.primary }} />
+                    <Switch
+                      value={item.switchValue ?? false}
+                      onValueChange={item.onSwitch}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor={colors.white}
+                    />
                   ) : (
                     <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                   )}
@@ -80,7 +188,7 @@ export default function SettingsScreen() {
           </View>
         ))}
 
-        <TouchableOpacity style={styles.logoutButton}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut}>
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
 
@@ -183,3 +291,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
 });
+
