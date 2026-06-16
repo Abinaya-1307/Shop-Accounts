@@ -15,12 +15,16 @@ import { Container, Card } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL as API } from '@/lib/config';
+import { useTheme } from '@/context/ThemeContext';
+import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 
 export default function ManageItemsScreen() {
   const router = useRouter();
+  const { isDark } = useTheme();
   const [items, setItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<any | null>(null);
 
   const loadItems = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
@@ -28,8 +32,10 @@ export default function ManageItemsScreen() {
     try {
       const { data } = await axios.get(`${API}/items`);
       setItems(data ?? []);
-    } catch (err) {
-      console.error('Load items error:', err);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Unknown error';
+      console.error('Load items error:', msg);
+      Alert.alert('Error', `Could not load items: ${msg}`);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -39,35 +45,37 @@ export default function ManageItemsScreen() {
   useEffect(() => { loadItems(); }, [loadItems]);
 
   const handleDelete = (item: any) => {
-    Alert.alert(
-      'Delete Item',
-      `Remove "${item.name}" and all its history? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await axios.delete(`${API}/items/${item.id}`);
-              setItems((prev) => prev.filter((i) => i.id !== item.id));
-            } catch {
-              Alert.alert('Error', 'Could not delete item. Try again.');
-            }
-          },
-        },
-      ]
-    );
+    setItemToDelete(item);
   };
 
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    const target = itemToDelete;
+    setItemToDelete(null);
+    try {
+      await axios.delete(`${API}/items/${target.id}`);
+      setItems((prev) => prev.filter((i) => i.id !== target.id));
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Unknown error';
+      console.error('Delete item error:', msg);
+      Alert.alert('Delete Failed', `Could not delete item.\n\nReason: ${msg}`);
+    }
+  };
+
+  const bg = isDark ? '#0F172A' : colors.background;
+  const cardBg = isDark ? '#1E293B' : colors.white;
+  const textColor = isDark ? '#F1F5F9' : colors.text;
+  const subColor = isDark ? '#94A3B8' : colors.textTertiary;
+  const borderColor = isDark ? '#334155' : colors.border;
+
   return (
-    <Container safeArea edges={['top']}>
+    <Container safeArea edges={['top']} style={{ backgroundColor: bg }}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
+      <View style={[styles.header, { borderBottomColor: borderColor }]}>
+        <TouchableOpacity style={[styles.backBtn, { backgroundColor: isDark ? '#1E293B' : colors.backgroundSecondary }]} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color={textColor} />
         </TouchableOpacity>
-        <Text style={styles.title}>Manage Items</Text>
+        <Text style={[styles.title, { color: textColor }]}>Manage Items</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -77,8 +85,8 @@ export default function ManageItemsScreen() {
         </View>
       ) : items.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="basket-outline" size={64} color={colors.textTertiary} />
-          <Text style={styles.emptyText}>No items tracked yet.</Text>
+          <Ionicons name="basket-outline" size={64} color={subColor} />
+          <Text style={[styles.emptyText, { color: subColor }]}>No items tracked yet.</Text>
         </View>
       ) : (
         <FlatList
@@ -94,14 +102,14 @@ export default function ManageItemsScreen() {
             />
           }
           renderItem={({ item }) => (
-            <Card style={styles.itemCard}>
+            <Card style={[styles.itemCard, { backgroundColor: cardBg }]}>
               <View style={styles.itemRow}>
-                <View style={styles.iconBadge}>
+                <View style={[styles.iconBadge, { backgroundColor: isDark ? '#312E81' : colors.primaryTint }]}>
                   <Ionicons name="cube-outline" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemMeta}>
+                  <Text style={[styles.itemName, { color: textColor }]}>{item.name}</Text>
+                  <Text style={[styles.itemMeta, { color: subColor }]}>
                     {item.unit}
                     {item.last_price ? `  ·  Last ₹${item.last_price}` : ''}
                     {item.category ? `  ·  ${item.category}` : ''}
@@ -118,6 +126,14 @@ export default function ManageItemsScreen() {
           )}
         />
       )}
+
+      <DeleteConfirmationModal
+        visible={itemToDelete !== null}
+        title="Delete Item"
+        message={`Remove "${itemToDelete?.name}" and all its history? This cannot be undone.`}
+        onCancel={() => setItemToDelete(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </Container>
   );
 }
@@ -130,19 +146,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   title: {
     ...typography.h3,
-    color: colors.text,
   },
   centered: {
     flex: 1,
@@ -152,7 +165,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.body,
-    color: colors.textTertiary,
   },
   list: {
     padding: spacing.lg,
@@ -170,7 +182,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.primaryTint,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -180,11 +191,9 @@ const styles = StyleSheet.create({
   },
   itemName: {
     ...typography.bodyBold,
-    color: colors.text,
   },
   itemMeta: {
     ...typography.small,
-    color: colors.textTertiary,
     marginTop: 2,
   },
   deleteBtn: {
