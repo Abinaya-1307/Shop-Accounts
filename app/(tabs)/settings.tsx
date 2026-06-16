@@ -12,28 +12,16 @@ import { useRouter } from 'expo-router';
 import { Container, Card } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [darkMode, setDarkMode] = useState(false);
+  const { isDark, toggleDark, theme } = useTheme();
   const [language, setLanguage] = useState('English');
 
   const handleManageItems = () => router.push('/manage-items');
   const handleManageShops = () => router.push('/manage-shops');
 
-  const handleLanguage = () => {
-    Alert.alert('Language', 'Choose your preferred language.', [
-      {
-        text: 'English',
-        onPress: () => setLanguage('English'),
-      },
-      {
-        text: 'Tamil',
-        onPress: () => setLanguage('Tamil'),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
 
   const handleGoogleDrive = () => {
     Alert.alert('Sync to Google Drive', 'This feature is coming soon!', [
@@ -110,35 +98,29 @@ export default function SettingsScreen() {
     {
       title: 'App Settings',
       items: [
-        {
-          icon: 'language',
-          label: 'Language',
-          value: language,
-          color: '#F59E0B',
-          onPress: handleLanguage,
-        },
+        
         {
           icon: 'moon',
           label: 'Dark Mode',
           type: 'switch',
           color: '#374151',
-          switchValue: darkMode,
-          onSwitch: (v) => {
-            setDarkMode(v);
-            if (v) {
-              Alert.alert('Dark Mode', 'Dark mode support is coming in a future update.');
-              setDarkMode(false);
-            }
-          },
+          switchValue: isDark,
+          onSwitch: () => toggleDark(),
         },
       ],
     },
   ];
 
+  const bg = isDark ? '#0F172A' : colors.background;
+  const cardBg = isDark ? '#1E293B' : colors.white;
+  const textColor = isDark ? '#F1F5F9' : colors.text;
+  const subColor = isDark ? '#94A3B8' : colors.textTertiary;
+  const borderColor = isDark ? '#334155' : colors.border;
+
   return (
-    <Container safeArea padding="lg">
+    <Container safeArea padding="lg" style={{ backgroundColor: bg }}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={[styles.title, { color: textColor }]}>Settings</Text>
 
         {/* Profile */}
         <View style={styles.profileSection}>
@@ -146,20 +128,21 @@ export default function SettingsScreen() {
             <Text style={styles.avatarText}>M</Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Amma's Account</Text>
-            <Text style={styles.profileSub}>Standard User</Text>
+            <Text style={[styles.profileName, { color: textColor }]}>Amma's Account</Text>
+            <Text style={[styles.profileSub, { color: subColor }]}>Standard User</Text>
           </View>
         </View>
 
         {settingsGroups.map((group, idx) => (
           <View key={idx} style={styles.group}>
-            <Text style={styles.groupTitle}>{group.title}</Text>
-            <Card style={styles.groupCard}>
+            <Text style={[styles.groupTitle, { color: subColor }]}>{group.title}</Text>
+            <Card style={[styles.groupCard, { backgroundColor: cardBg, borderColor }]}>
               {group.items.map((item, itemIdx) => (
                 <TouchableOpacity
                   key={itemIdx}
                   style={[
                     styles.settingItem,
+                    { borderBottomColor: borderColor },
                     itemIdx === group.items.length - 1 && styles.lastItem,
                   ]}
                   onPress={item.type !== 'switch' ? item.onPress : undefined}
@@ -168,19 +151,19 @@ export default function SettingsScreen() {
                   <View style={[styles.iconBox, { backgroundColor: item.color + '20' }]}>
                     <Ionicons name={item.icon as any} size={20} color={item.color} />
                   </View>
-                  <Text style={styles.settingLabel}>{item.label}</Text>
+                  <Text style={[styles.settingLabel, { color: textColor }]}>{item.label}</Text>
                   {item.value && (
-                    <Text style={styles.settingValue}>{item.value}</Text>
+                    <Text style={[styles.settingValue, { color: subColor }]}>{item.value}</Text>
                   )}
                   {item.type === 'switch' ? (
                     <Switch
                       value={item.switchValue ?? false}
                       onValueChange={item.onSwitch}
-                      trackColor={{ false: colors.border, true: colors.primary }}
+                      trackColor={{ false: borderColor, true: colors.primary }}
                       thumbColor={colors.white}
                     />
                   ) : (
-                    <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                    <Ionicons name="chevron-forward" size={20} color={subColor} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -188,11 +171,7 @@ export default function SettingsScreen() {
           </View>
         ))}
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut}>
-          <Text style={styles.logoutText}>Sign Out</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.version}>ShopTracker v1.0.0</Text>
+        <Text style={[styles.version, { color: subColor }]}>ShopTracker v1.1.0</Text>
       </ScrollView>
     </Container>
   );
@@ -201,7 +180,6 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   title: {
     ...typography.h2,
-    color: colors.text,
     marginBottom: spacing.xl,
   },
   profileSection: {
@@ -226,18 +204,15 @@ const styles = StyleSheet.create({
   },
   profileName: {
     ...typography.h3,
-    color: colors.text,
   },
   profileSub: {
     ...typography.caption,
-    color: colors.textTertiary,
   },
   group: {
     marginBottom: spacing.xl,
   },
   groupTitle: {
     ...typography.captionBold,
-    color: colors.textTertiary,
     textTransform: 'uppercase',
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
@@ -245,13 +220,13 @@ const styles = StyleSheet.create({
   groupCard: {
     padding: 0,
     overflow: 'hidden',
+    borderWidth: 1,
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   lastItem: {
     borderBottomWidth: 0,
@@ -266,12 +241,10 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     ...typography.body,
-    color: colors.text,
     flex: 1,
   },
   settingValue: {
     ...typography.caption,
-    color: colors.textTertiary,
     marginRight: spacing.xs,
   },
   logoutButton: {
@@ -285,10 +258,8 @@ const styles = StyleSheet.create({
   },
   version: {
     ...typography.tiny,
-    color: colors.textTertiary,
     textAlign: 'center',
     marginTop: spacing.xl,
     marginBottom: spacing.xxl,
   },
 });
-
