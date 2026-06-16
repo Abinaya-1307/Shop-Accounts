@@ -15,6 +15,7 @@ import { Container, Card, Input } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL as API } from '@/lib/config';
+import { RefreshControl } from 'react-native';
 
 type ActiveTab = 'items' | 'byshop';
 
@@ -26,26 +27,28 @@ export default function HistoryScreen() {
   const [items, setItems] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch all items + transactions once on mount
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const [itemsRes, txnRes] = await Promise.all([
-          axios.get(`${API}/items`),
-          axios.get(`${API}/transactions`),
-        ]);
-        setItems(itemsRes.data ?? []);
-        setTransactions(txnRes.data ?? []);
-      } catch (err) {
-        console.error('History load error:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setIsLoading(true);
+    try {
+      const [itemsRes, txnRes] = await Promise.all([
+        axios.get(`${API}/items`),
+        axios.get(`${API}/transactions`),
+      ]);
+      setItems(itemsRes.data ?? []);
+      setTransactions(txnRes.data ?? []);
+    } catch (err) {
+      console.error('History load error:', err);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
 
   // ─── Items Tab ────────────────────────────────────────────────────────────
   const filteredItems = useMemo(() => {
@@ -180,6 +183,14 @@ export default function HistoryScreen() {
                   keyExtractor={(item) => item.id}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.listContent}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={() => load(true)}
+                      colors={[colors.primary]}
+                      tintColor={colors.primary}
+                    />
+                  }
                   renderItem={({ item }) => {
                     const trend = getItemTrend(item.id);
                     return (
@@ -251,6 +262,14 @@ export default function HistoryScreen() {
             <ScrollView
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => load(true)}
+                  colors={[colors.primary]}
+                  tintColor={colors.primary}
+                />
+              }
             >
               {shopDateGroups.length === 0 ? (
                 <View style={styles.emptyState}>

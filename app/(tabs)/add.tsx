@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
   View,
@@ -21,7 +21,6 @@ export default function AddScreen() {
 
   const [itemName, setItemName] = useState('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [itemSuggestions, setItemSuggestions] = useState<any[]>([]);
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
 
   const [pricePerUnit, setPricePerUnit] = useState('');
@@ -30,48 +29,42 @@ export default function AddScreen() {
 
   const [shopName, setShopName] = useState('');
   const [selectedShop, setSelectedShop] = useState<any>(null);
-  const [shopSuggestions, setShopSuggestions] = useState<any[]>([]);
   const [showShopSuggestions, setShowShopSuggestions] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
 
-  // Debounced item search
-  const itemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!itemName || itemName.length < 1) {
-      setItemSuggestions([]);
-      return;
-    }
-    if (itemDebounce.current) clearTimeout(itemDebounce.current);
-    itemDebounce.current = setTimeout(async () => {
-      try {
-        const { data } = await axios.get(`${API}/items/search`, { params: { q: itemName } });
-        setItemSuggestions(data);
-      } catch {
-        setItemSuggestions([]);
-      }
-    }, 300);
-    return () => { if (itemDebounce.current) clearTimeout(itemDebounce.current); };
-  }, [itemName]);
+  // ── Preload full item + shop lists once on mount ───────────────────────────
+  // All filtering is done in-memory so suggestions appear on every keystroke
+  // with zero network latency.
+  const [allItems, setAllItems] = useState<any[]>([]);
+  const [allShops, setAllShops] = useState<any[]>([]);
 
-  // Debounced shop search
-  const shopDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!shopName || shopName.length < 1) {
-      setShopSuggestions([]);
-      return;
-    }
-    if (shopDebounce.current) clearTimeout(shopDebounce.current);
-    shopDebounce.current = setTimeout(async () => {
-      try {
-        const { data } = await axios.get(`${API}/shops/search`, { params: { q: shopName } });
-        setShopSuggestions(data);
-      } catch {
-        setShopSuggestions([]);
-      }
-    }, 300);
-    return () => { if (shopDebounce.current) clearTimeout(shopDebounce.current); };
-  }, [shopName]);
+    Promise.all([
+      axios.get(`${API}/items/all`).catch(() => ({ data: [] })),
+      axios.get(`${API}/shops/all`).catch(() => ({ data: [] })),
+    ]).then(([itemsRes, shopsRes]) => {
+      setAllItems(itemsRes.data ?? []);
+      setAllShops(shopsRes.data ?? []);
+    });
+  }, []);
+
+  // ── Instant in-memory filtering (no debounce, no network) ─────────────────
+  const itemSuggestions = useMemo(() => {
+    if (!itemName || itemName.length < 1) return [];
+    const q = itemName.toLowerCase();
+    const prefix   = allItems.filter(i => i.name.toLowerCase().startsWith(q));
+    const contains = allItems.filter(i => !i.name.toLowerCase().startsWith(q) && i.name.toLowerCase().includes(q));
+    return [...prefix, ...contains].slice(0, 10);
+  }, [itemName, allItems]);
+
+  const shopSuggestions = useMemo(() => {
+    if (!shopName || shopName.length < 1) return [];
+    const q = shopName.toLowerCase();
+    const prefix   = allShops.filter(s => s.name.toLowerCase().startsWith(q));
+    const contains = allShops.filter(s => !s.name.toLowerCase().startsWith(q) && s.name.toLowerCase().includes(q));
+    return [...prefix, ...contains].slice(0, 10);
+  }, [shopName, allShops]);
 
   const totalCost = useMemo(() => {
     const p = parseFloat(pricePerUnit) || 0;
@@ -112,7 +105,53 @@ export default function AddScreen() {
 
     setIsSaving(true);
     try {
-      await axios.post(`${API}/new`, payload);
+      const { data: savedData } = await axios.post(`${API}/new`, payload);
+
+      // ── Optimistically update the local preloaded lists so the new
+      //    item / shop appears in suggestions immediately on the next
+      //    purchase without waiting for a remount or re-fetch. ─────────────
+      if (!selectedItem) {
+        // Brand-new item — add it to allItems right away
+        const newItemEntry = {
+          id: savedData?.itemId ?? `item_${Date.now()}`,
+          name: itemName,
+          unit,
+          category: 'General',
+          last_price: parseFloat(pricePerUnit),
+          last_purchased_date: new Date().toISOString().split('T')[0],
+        };
+        setAllItems(prev =>
+          prev.some(i => i.name.toLowerCase() === itemName.toLowerCase())
+            ? prev.map(i =>
+                i.name.toLowerCase() === itemName.toLowerCase()
+                  ? { ...i, last_price: parseFloat(pricePerUnit) }
+                  : i
+              )
+            : [...prev, newItemEntry]
+        );
+      } else {
+        // Existing item — update its cached last_price
+        setAllItems(prev =>
+          prev.map(i =>
+            i.id === selectedItem.id
+              ? { ...i, last_price: parseFloat(pricePerUnit) }
+              : i
+          )
+        );
+      }
+
+      if (payload.shop && !selectedShop) {
+        // Brand-new shop — add it to allShops right away
+        const newShopEntry = {
+          id: savedData?.shopId ?? `shop_${Date.now()}`,
+          name: payload.shop.name,
+        };
+        setAllShops(prev =>
+          prev.some(s => s.name.toLowerCase() === payload.shop!.name.toLowerCase())
+            ? prev
+            : [...prev, newShopEntry]
+        );
+      }
 
       // Keep local context in sync so History/Reports tabs stay updated
       await createTxn.mutateAsync({
@@ -170,7 +209,6 @@ export default function AddScreen() {
                   setItemName(item.name);
                   setUnit(item.unit || 'kg');
                   setShowItemSuggestions(false);
-                  setItemSuggestions([]);
                 }}
               >
                 <Text style={styles.suggestionText}>{item.name}</Text>
@@ -269,7 +307,6 @@ export default function AddScreen() {
                   setSelectedShop(shop);
                   setShopName(shop.name);
                   setShowShopSuggestions(false);
-                  setShopSuggestions([]);
                 }}
               >
                 <Text style={styles.suggestionText}>{shop.name}</Text>
