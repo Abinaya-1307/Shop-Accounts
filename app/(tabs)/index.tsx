@@ -16,6 +16,8 @@ import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL as API } from '@/lib/config';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -57,6 +59,7 @@ export default function DashboardScreen() {
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
   const [isLoading, setIsLoading]       = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const router = useRouter();
 
   const loadDashboard = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
@@ -80,6 +83,26 @@ export default function DashboardScreen() {
 
   const diff = currentMonthTotal - prevMonthTotal;
   const monthOptions = buildMonthOptions();
+
+  const handleScanReceipt = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      return alert('Sorry, we need camera roll permissions to make this work!');
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      router.push({
+        pathname: '/scan-review',
+        params: { imageUri: result.assets[0].uri }
+      });
+    }
+  };
 
   const renderTransaction = ({ item }: { item: any }) => (
     <Card style={styles.txnCard}>
@@ -210,7 +233,7 @@ export default function DashboardScreen() {
 
             {/* ── Quick Actions ── */}
             <View style={styles.quickActions}>
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity style={styles.actionButton} onPress={handleScanReceipt}>
                 <View style={[styles.actionIcon, { backgroundColor: '#F0F9FF' }]}>
                   <Ionicons name="camera" size={24} color="#0EA5E9" />
                 </View>

@@ -155,6 +155,7 @@ type ShopContextType = {
 
   // Mutations
   addPurchase: (payload: AddPurchasePayload) => Promise<void>;
+  addBatchPurchases: (payloads: AddPurchasePayload[]) => Promise<void>;
 
   // Read helpers
   getMonthlyTotal: (month: number, year: number) => number;
@@ -169,6 +170,7 @@ const ShopContext = createContext<ShopContextType>({
   shops: [],
   isLoading: true,
   addPurchase: async () => {},
+  addBatchPurchases: async () => {},
   getMonthlyTotal: () => 0,
   getItemHistory: () => [],
   getRecentTransactions: () => [],
@@ -321,6 +323,89 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     [items, transactions, shops, persistItems, persistTransactions, persistShops]
   );
 
+  const addBatchPurchases = useCallback(
+    async (payloads: AddPurchasePayload[]) => {
+      let currentItems = [...items];
+      let currentShops = [...shops];
+      let newTransactions = [];
+      let shopsChanged = false;
+
+      for (const payload of payloads) {
+        const { item, shop, pricePerUnit, quantity, totalCost, unit, date, id } = payload;
+
+        // 1. Resolve Item
+        let resolvedItem: Item | undefined = item.id
+          ? currentItems.find((i) => i.id === item.id)
+          : currentItems.find((i) => i.name.toLowerCase() === item.name.toLowerCase());
+
+        const trend = getPriceTrend(pricePerUnit, resolvedItem?.lastPrice);
+
+        if (!resolvedItem) {
+          resolvedItem = {
+            id: item.id || generateId('item'),
+            name: item.name,
+            unit: unit,
+            lastPrice: pricePerUnit,
+            lastPurchasedDate: date,
+            category: item.category || 'General',
+          };
+          currentItems.push(resolvedItem);
+        } else {
+          const rItem = resolvedItem; // for typescript
+          currentItems = currentItems.map((i) =>
+            i.id === rItem.id
+              ? { ...i, lastPrice: pricePerUnit, lastPurchasedDate: date }
+              : i
+          );
+        }
+
+        // 2. Resolve Shop
+        let shopId: string | undefined;
+        let shopName: string | undefined;
+        if (shop?.name) {
+          let resolvedShop = shop.id
+            ? currentShops.find((s) => s.id === shop.id)
+            : currentShops.find((s) => s.name.toLowerCase() === shop.name!.toLowerCase());
+
+          if (!resolvedShop) {
+            resolvedShop = { id: shop.id || generateId('shop'), name: shop.name };
+            currentShops.push(resolvedShop);
+            shopsChanged = true;
+          }
+          shopId = resolvedShop.id;
+          shopName = resolvedShop.name;
+        }
+
+        // 3. Build Transaction
+        newTransactions.push({
+          id: id || generateId('txn'),
+          itemId: resolvedItem.id,
+          itemName: resolvedItem.name,
+          pricePerUnit,
+          quantity,
+          totalCost,
+          unit,
+          date,
+          priceTrend: trend,
+          shopId,
+          shopName,
+        });
+      }
+
+      // 4. Persist everything
+      const updatedTransactions = [...newTransactions, ...transactions].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      
+      await Promise.all([
+        persistItems(currentItems),
+        persistTransactions(updatedTransactions),
+        shopsChanged ? persistShops(currentShops) : Promise.resolve(),
+      ]);
+    },
+    [items, transactions, shops, persistItems, persistTransactions, persistShops]
+  );
+
   // ── Read Helpers ──────────────────────────────────────────────────────────
   const getMonthlyTotal = useCallback(
     (month: number, year: number): number => {
@@ -360,6 +445,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         shops,
         isLoading,
         addPurchase,
+        addBatchPurchases,
         getMonthlyTotal,
         getItemHistory,
         getRecentTransactions,

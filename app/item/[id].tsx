@@ -215,7 +215,7 @@ export default function ItemDetailScreen() {
                     />
                     <Text style={[styles.trendText, { color: trendColor(txn.price_trend) }]}>
                       {txn.price_trend === 'increase'
-                        ? 'Rose'
+                        ? 'Rise'
                         : txn.price_trend === 'decrease'
                         ? 'Fell'
                         : 'Same'}

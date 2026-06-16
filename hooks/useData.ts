@@ -57,3 +57,26 @@ export function useCreateTransaction() {
 
   return { mutateAsync, isPending };
 }
+
+/**
+ * Returns a mutation-like object whose mutateAsync calls addBatchPurchases on the context.
+ */
+export function useCreateBatchTransaction() {
+  const { addBatchPurchases } = useShopContext();
+  const [isPending, setIsPending] = useState(false);
+
+  const mutateAsync = useCallback(
+    async (payloads: AddPurchasePayload[]) => {
+      setIsPending(true);
+      try {
+        await addBatchPurchases(payloads);
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [addBatchPurchases]
+  );
+
+  return { mutateAsync, isPending };
+}
+
