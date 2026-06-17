@@ -80,3 +80,41 @@ export function useCreateBatchTransaction() {
   return { mutateAsync, isPending };
 }
 
+export function useUpdateTransaction() {
+  const { updatePurchase } = useShopContext();
+  const [isPending, setIsPending] = useState(false);
+
+  const mutateAsync = useCallback(
+    async (id: string, payload: any) => {
+      setIsPending(true);
+      try {
+        await updatePurchase(id, payload);
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [updatePurchase]
+  );
+
+  return { mutateAsync, isPending };
+}
+
+export function useDeleteTransaction() {
+  const { deletePurchase } = useShopContext();
+  const [isPending, setIsPending] = useState(false);
+
+  const mutateAsync = useCallback(
+    async (id: string) => {
+      setIsPending(true);
+      try {
+        await deletePurchase(id);
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [deletePurchase]
+  );
+
+  return { mutateAsync, isPending };
+}
+

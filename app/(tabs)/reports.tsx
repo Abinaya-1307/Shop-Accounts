@@ -15,6 +15,7 @@ import { Container, Card } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL as API } from '@/lib/config';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const EXPENSE_COLORS = ['#6366F1','#0EA5E9','#10B981','#F59E0B','#EF4444'];
@@ -22,6 +23,9 @@ const DAY_HEADERS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 export default function ReportsScreen() {
   const now = new Date();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 60 + insets.bottom;
+
   const [month, setMonth]       = useState(now.getMonth());
   const [year, setYear]         = useState(now.getFullYear());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -124,7 +128,7 @@ export default function ReportsScreen() {
   }, []);
 
   return (
-    <Container safeArea edges={['top']}>
+    <Container safeArea edges={['top', 'left', 'right']}>
       {/* ── Month Picker Modal ── */}
       <Modal
         visible={showMonthPicker}
@@ -132,12 +136,13 @@ export default function ReportsScreen() {
         animationType="fade"
         onRequestClose={() => setShowMonthPicker(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowMonthPicker(false)}
-        >
-          <View style={styles.pickerCard}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setShowMonthPicker(false)}
+          />
+          <View style={[styles.pickerCard, { paddingBottom: insets.bottom > 0 ? insets.bottom + spacing.md : spacing.xl }]}>
             <Text style={styles.pickerTitle}>Select Month</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {monthOptions.map((opt) => {
@@ -162,7 +167,7 @@ export default function ReportsScreen() {
               })}
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* ── Day Detail Modal ── */}
@@ -172,12 +177,13 @@ export default function ReportsScreen() {
         animationType="slide"
         onRequestClose={() => setShowDayModal(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowDayModal(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.dayModalCard}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setShowDayModal(false)}
+          />
+          <View style={[styles.dayModalCard, { paddingBottom: insets.bottom > 0 ? insets.bottom + spacing.md : spacing.xxl }]}>
             {/* Header */}
             <View style={styles.dayModalHeader}>
               <View>
@@ -212,13 +218,13 @@ export default function ReportsScreen() {
                 ))
               )}
             </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight + spacing.lg }]}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.primary} />
         }
