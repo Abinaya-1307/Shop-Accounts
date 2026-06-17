@@ -19,6 +19,7 @@ import { API_URL as API } from '@/lib/config';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -46,6 +47,8 @@ function buildMonthOptions() {
 export default function DashboardScreen() {
   const now = new Date();
   const { isDark, theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 60 + insets.bottom;
 
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear]   = useState(now.getFullYear());
@@ -170,7 +173,21 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.txnAmountContainer}>
             <Text style={[styles.txnAmount, isDark && { color: '#F1F5F9' }]}>₹ {group.total.toFixed(2)}</Text>
-            <Ionicons name="chevron-forward" size={14} color={isDark ? '#64748B' : colors.textTertiary} style={{ marginTop: 2 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 2 }}>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  router.push({
+                    pathname: '/shop-session',
+                    params: { shopName: group.shopName, date: group.date },
+                  });
+                }}
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="create-outline" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <Ionicons name="chevron-forward" size={14} color={isDark ? '#64748B' : colors.textTertiary} />
+            </View>
           </View>
         </View>
       </Card>
@@ -178,7 +195,7 @@ export default function DashboardScreen() {
   );
 
   return (
-    <Container safeArea edges={['top']} style={{ backgroundColor: isDark ? '#0F172A' : colors.background }}>
+    <Container safeArea edges={['top', 'left', 'right']} style={{ backgroundColor: isDark ? '#0F172A' : colors.background }}>
       {/* ── Month Picker Modal ── */}
       <Modal
         visible={showMonthPicker}
@@ -226,7 +243,7 @@ export default function DashboardScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight + spacing.lg }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}

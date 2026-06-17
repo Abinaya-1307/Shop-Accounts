@@ -14,9 +14,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCreateTransaction } from '@/hooks/useData';
 import { useRouter } from 'expo-router';
 import { API_URL as API } from '@/lib/config';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AddScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 60 + insets.bottom;
+
   const createTxn = useCreateTransaction();
 
   const [itemName, setItemName] = useState('');
@@ -172,7 +176,7 @@ export default function AddScreen() {
   const UNITS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'nos'];
 
   return (
-    <Container safeArea padding="lg">
+    <Container safeArea edges={['top', 'left', 'right']} padding="lg">
       <View style={styles.header}>
         <Text style={styles.title}>New Purchase</Text>
         <TouchableOpacity onPress={handleSave} disabled={isSaving}>
@@ -183,7 +187,7 @@ export default function AddScreen() {
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight + spacing.lg }]}
       >
         {/* ── Item Search ── */}
         <Text style={styles.fieldLabel}>Item Name</Text>

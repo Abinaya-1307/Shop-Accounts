@@ -13,9 +13,13 @@ import { Container, Card } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 60 + insets.bottom;
+
   const { isDark, toggleDark, theme } = useTheme();
   const [language, setLanguage] = useState('English');
 
@@ -118,8 +122,8 @@ export default function SettingsScreen() {
   const borderColor = isDark ? '#334155' : colors.border;
 
   return (
-    <Container safeArea padding="lg" style={{ backgroundColor: bg }}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <Container safeArea edges={['top', 'left', 'right']} padding="lg" style={{ backgroundColor: bg }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: tabBarHeight + spacing.lg }}>
         <Text style={[styles.title, { color: textColor }]}>Settings</Text>
 
         {/* Profile */}

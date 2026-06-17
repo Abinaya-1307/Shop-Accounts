@@ -58,7 +58,7 @@ export default function ShopSessionScreen() {
   };
 
   return (
-    <Container safeArea edges={['top']}>
+    <Container safeArea edges={['top', 'bottom', 'left', 'right']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* ── Header ── */}
@@ -110,19 +110,27 @@ export default function ShopSessionScreen() {
                 <Card key={txn.id} style={styles.txnCard}>
                   <View style={styles.txnHeader}>
                     <Text style={styles.txnItemName}>{txn.item_name}</Text>
-                    <View style={styles.trendBadge}>
-                      <Ionicons
-                        name={trendIcon(txn.price_trend)}
-                        size={14}
-                        color={trendColor(txn.price_trend)}
-                      />
-                      <Text style={[styles.trendLabel, { color: trendColor(txn.price_trend) }]}>
-                        {txn.price_trend === 'increase'
-                          ? 'Higher'
-                          : txn.price_trend === 'decrease'
-                          ? 'Lower'
-                          : 'Same'}
-                      </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                      <View style={styles.trendBadge}>
+                        <Ionicons
+                          name={trendIcon(txn.price_trend)}
+                          size={14}
+                          color={trendColor(txn.price_trend)}
+                        />
+                        <Text style={[styles.trendLabel, { color: trendColor(txn.price_trend) }]}>
+                          {txn.price_trend === 'increase'
+                            ? 'Higher'
+                            : txn.price_trend === 'decrease'
+                            ? 'Lower'
+                            : 'Same'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => router.push({ pathname: '/edit-transaction', params: { id: txn.id } })}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons name="create-outline" size={18} color={colors.primary} />
+                      </TouchableOpacity>
                     </View>
                   </View>
 
