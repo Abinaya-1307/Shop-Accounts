@@ -3,7 +3,7 @@
  */
 
 import { ReactNode } from 'react';
-import { ImageSourcePropType, ViewStyle } from 'react-native';
+import { ImageSourcePropType, StyleProp, ViewStyle } from 'react-native';
 
 export type CardVariant = 'flat' | 'elevated' | 'outlined';
 
@@ -27,7 +27,7 @@ export interface CardProps {
   /**
    * Additional style overrides
    */
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 
   /**
    * Test ID for automated testing

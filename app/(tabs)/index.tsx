@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import {
   View,
@@ -18,6 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL as API } from '@/lib/config';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { useTheme } from '@/context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -44,6 +46,9 @@ function buildMonthOptions() {
 
 export default function DashboardScreen() {
   const now = new Date();
+  const { isDark, theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 60 + insets.bottom;
 
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear]   = useState(now.getFullYear());
@@ -104,35 +109,93 @@ export default function DashboardScreen() {
     }
   };
 
-  const renderTransaction = ({ item }: { item: any }) => (
-    <Card style={styles.txnCard}>
-      <View style={styles.txnRow}>
-        <View style={styles.iconContainer}>
-          <Ionicons name={getItemIcon(item.item_name)} size={24} color={colors.primary} />
+  // ── Group transactions by (shop_name + date) ──────────────────────────────
+  const shopGroups = useMemo(() => {
+    const map = new Map<string, {
+      key: string;
+      shopName: string;
+      date: string;
+      dateLabel: string;
+      itemCount: number;
+      total: number;
+    }>();
+
+    recentTransactions.forEach((txn: any) => {
+      const dateOnly = txn.date ? txn.date.split('T')[0] : '';
+      const shop = txn.shop_name || 'Unknown Shop';
+      const key = `${shop}__${dateOnly}`;
+
+      if (map.has(key)) {
+        const g = map.get(key)!;
+        g.itemCount += 1;
+        g.total += txn.total_cost || 0;
+      } else {
+        map.set(key, {
+          key,
+          shopName: shop,
+          date: dateOnly,
+          dateLabel: dateOnly
+            ? new Date(dateOnly + 'T00:00:00').toLocaleDateString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              })
+            : '',
+          itemCount: 1,
+          total: txn.total_cost || 0,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [recentTransactions]);
+
+  const renderShopGroup = ({ item: group }: { item: typeof shopGroups[0] }) => (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={() =>
+        router.push({
+          pathname: '/shop-session',
+          params: { shopName: group.shopName, date: group.date },
+        })
+      }
+    >
+      <Card style={[styles.txnCard, isDark && { backgroundColor: '#1E293B' }]}>
+        <View style={styles.txnRow}>
+          <View style={styles.iconContainer}>
+            <Ionicons name="storefront" size={22} color={colors.primary} />
+          </View>
+          <View style={styles.txnInfo}>
+            <Text style={[styles.itemName, isDark && { color: '#F1F5F9' }]}>{group.shopName}</Text>
+            <Text style={[styles.itemDate, isDark && { color: '#94A3B8' }]}>
+              {group.dateLabel}  ·  {group.itemCount} item{group.itemCount !== 1 ? 's' : ''}
+            </Text>
+          </View>
+          <View style={styles.txnAmountContainer}>
+            <Text style={[styles.txnAmount, isDark && { color: '#F1F5F9' }]}>₹ {group.total.toFixed(2)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 2 }}>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  router.push({
+                    pathname: '/shop-session',
+                    params: { shopName: group.shopName, date: group.date },
+                  });
+                }}
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="create-outline" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <Ionicons name="chevron-forward" size={14} color={isDark ? '#64748B' : colors.textTertiary} />
+            </View>
+          </View>
         </View>
-        <View style={styles.txnInfo}>
-          <Text style={styles.itemName}>{item.item_name}</Text>
-          <Text style={styles.itemDate}>
-            {new Date(item.date).toLocaleDateString('en-IN')} ·{' '}
-            {new Date(item.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-            {item.shop_name ? `  ·  ${item.shop_name}` : ''}
-          </Text>
-        </View>
-        <View style={styles.txnAmountContainer}>
-          <Text style={styles.txnAmount}>₹ {item.total_cost.toFixed(2)}</Text>
-          {item.price_trend === 'increase' && (
-            <Ionicons name="arrow-up" size={12} color={colors.error} />
-          )}
-          {item.price_trend === 'decrease' && (
-            <Ionicons name="arrow-down" size={12} color={colors.success} />
-          )}
-        </View>
-      </View>
-    </Card>
+      </Card>
+    </TouchableOpacity>
   );
 
   return (
-    <Container safeArea edges={['top']}>
+    <Container safeArea edges={['top', 'left', 'right']} style={{ backgroundColor: isDark ? '#0F172A' : colors.background }}>
       {/* ── Month Picker Modal ── */}
       <Modal
         visible={showMonthPicker}
@@ -145,34 +208,42 @@ export default function DashboardScreen() {
           activeOpacity={1}
           onPress={() => setShowMonthPicker(false)}
         >
-          <View style={styles.monthPickerCard}>
-            <Text style={styles.monthPickerTitle}>Select Month</Text>
-            {monthOptions.map((opt) => {
-              const isSelected = opt.month === selectedMonth && opt.year === selectedYear;
-              return (
-                <TouchableOpacity
-                  key={`${opt.year}-${opt.month}`}
-                  style={[styles.monthOption, isSelected && styles.monthOptionActive]}
-                  onPress={() => {
-                    setSelectedMonth(opt.month);
-                    setSelectedYear(opt.year);
-                    setShowMonthPicker(false);
-                  }}
-                >
-                  <Text style={[styles.monthOptionText, isSelected && styles.monthOptionTextActive]}>
-                    {MONTH_NAMES[opt.month]} {opt.year}
-                  </Text>
-                  {isSelected && <Ionicons name="checkmark" size={18} color={colors.primary} />}
-                </TouchableOpacity>
-              );
-            })}
+          <View style={[styles.monthPickerCard, isDark && { backgroundColor: '#1E293B' }]}>
+            <Text style={[styles.monthPickerTitle, isDark && { color: '#F1F5F9', borderBottomColor: '#334155' }]}>Select Month</Text>
+            {/* ScrollView shows 5 rows max, then scrolls */}
+            <ScrollView
+              style={styles.monthPickerScroll}
+              showsVerticalScrollIndicator={true}
+              bounces={false}
+              nestedScrollEnabled
+            >
+              {monthOptions.map((opt) => {
+                const isSelected = opt.month === selectedMonth && opt.year === selectedYear;
+                return (
+                  <TouchableOpacity
+                    key={`${opt.year}-${opt.month}`}
+                    style={[styles.monthOption, isSelected && styles.monthOptionActive]}
+                    onPress={() => {
+                      setSelectedMonth(opt.month);
+                      setSelectedYear(opt.year);
+                      setShowMonthPicker(false);
+                    }}
+                  >
+                    <Text style={[styles.monthOptionText, isDark && { color: '#F1F5F9' }, isSelected && styles.monthOptionTextActive]}>
+                      {MONTH_NAMES[opt.month]} {opt.year}
+                    </Text>
+                    {isSelected && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight + spacing.lg }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -258,16 +329,16 @@ export default function DashboardScreen() {
               <Text style={styles.sectionTitle}>Recent Purchases</Text>
             </View>
 
-            {recentTransactions.length === 0 ? (
+            {shopGroups.length === 0 ? (
               <Card style={styles.emptyCard}>
                 <Ionicons name="receipt-outline" size={48} color={colors.textTertiary} />
                 <Text style={styles.emptyText}>No purchases for this month.</Text>
               </Card>
             ) : (
               <FlatList
-                data={recentTransactions}
-                renderItem={renderTransaction}
-                keyExtractor={(item) => item.id}
+                data={shopGroups}
+                renderItem={renderShopGroup}
+                keyExtractor={(item) => item.key}
                 scrollEnabled={false}
               />
             )}
@@ -455,13 +526,13 @@ const styles = StyleSheet.create({
   monthPickerCard: {
     backgroundColor: colors.white,
     borderRadius: borderRadius.xl,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
-    maxHeight: 420,
   },
   monthPickerTitle: {
     ...typography.h3,
@@ -471,6 +542,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     marginBottom: spacing.xs,
+    paddingHorizontal: spacing.lg,
+  },
+  /* Exactly 5 rows visible: each row ~52px → 260px */
+  monthPickerScroll: {
+    maxHeight: 260,
   },
   monthOption: {
     flexDirection: 'row',
@@ -478,6 +554,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    height: 52,
   },
   monthOptionActive: {
     backgroundColor: colors.primaryTint,

@@ -82,7 +82,7 @@ export default function ItemDetailScreen() {
   // ── Loading ──
   if (isLoading) {
     return (
-      <Container safeArea edges={['top']}>
+      <Container safeArea edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -93,7 +93,7 @@ export default function ItemDetailScreen() {
   // ── Not Found ──
   if (notFound || !item) {
     return (
-      <Container safeArea edges={['top']}>
+      <Container safeArea edges={['top', 'bottom', 'left', 'right']}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backRowOnly}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
           <Text style={styles.backLabel}>Back</Text>
@@ -107,7 +107,7 @@ export default function ItemDetailScreen() {
   }
 
   return (
-    <Container safeArea edges={['top']}>
+    <Container safeArea edges={['top', 'bottom', 'left', 'right']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
@@ -207,19 +207,27 @@ export default function ItemDetailScreen() {
                     <Text style={styles.txnDate}>{dateStr}</Text>
                     <Text style={styles.txnTime}>{timeStr}</Text>
                   </View>
-                  <View style={[styles.trendBadge, { backgroundColor: trendBg(txn.price_trend) }]}>
-                    <Ionicons
-                      name={trendIcon(txn.price_trend)}
-                      size={13}
-                      color={trendColor(txn.price_trend)}
-                    />
-                    <Text style={[styles.trendText, { color: trendColor(txn.price_trend) }]}>
-                      {txn.price_trend === 'increase'
-                        ? 'Rise'
-                        : txn.price_trend === 'decrease'
-                        ? 'Fell'
-                        : 'Same'}
-                    </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                    <View style={[styles.trendBadge, { backgroundColor: trendBg(txn.price_trend) }]}>
+                      <Ionicons
+                        name={trendIcon(txn.price_trend)}
+                        size={13}
+                        color={trendColor(txn.price_trend)}
+                      />
+                      <Text style={[styles.trendText, { color: trendColor(txn.price_trend) }]}>
+                        {txn.price_trend === 'increase'
+                          ? 'Rise'
+                          : txn.price_trend === 'decrease'
+                          ? 'Fell'
+                          : 'Same'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => router.push({ pathname: '/edit-transaction', params: { id: txn.id } })}
+                      style={{ padding: 4 }}
+                    >
+                      <Ionicons name="create-outline" size={18} color={colors.primary} />
+                    </TouchableOpacity>
                   </View>
                 </View>
 

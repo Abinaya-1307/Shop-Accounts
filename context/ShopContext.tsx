@@ -156,6 +156,8 @@ type ShopContextType = {
   // Mutations
   addPurchase: (payload: AddPurchasePayload) => Promise<void>;
   addBatchPurchases: (payloads: AddPurchasePayload[]) => Promise<void>;
+  updatePurchase: (id: string, payload: any) => Promise<void>;
+  deletePurchase: (id: string) => Promise<void>;
 
   // Read helpers
   getMonthlyTotal: (month: number, year: number) => number;
@@ -171,10 +173,59 @@ const ShopContext = createContext<ShopContextType>({
   isLoading: true,
   addPurchase: async () => {},
   addBatchPurchases: async () => {},
+  updatePurchase: async () => {},
+  deletePurchase: async () => {},
   getMonthlyTotal: () => 0,
   getItemHistory: () => [],
   getRecentTransactions: () => [],
 });
+
+// Helper to recalculate local transaction trends and item stats chronologically
+function recalculateLocalItemStats(
+  itemId: string,
+  allTxns: Transaction[],
+  allItems: Item[]
+): { updatedTxns: Transaction[]; updatedItems: Item[] } {
+  // 1. Find all transactions for this item
+  const itemTxns = allTxns
+    .filter((t) => t.itemId === itemId)
+    // sort chronological ASC (oldest first)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // 2. Compute trends
+  const updatedTxns = allTxns.map((t) => {
+    if (t.itemId !== itemId) return t;
+    const idx = itemTxns.findIndex((it) => it.id === t.id);
+    if (idx <= 0) {
+      return { ...t, priceTrend: 'stable' as const };
+    }
+    const currentPrice = t.pricePerUnit;
+    const prevPrice = itemTxns[idx - 1].pricePerUnit;
+    const trend =
+      currentPrice > prevPrice
+        ? ('increase' as const)
+        : currentPrice < prevPrice
+        ? ('decrease' as const)
+        : ('stable' as const);
+    return { ...t, priceTrend: trend };
+  });
+
+  // 3. Update Item lastPrice and lastPurchasedDate
+  const updatedItems = allItems.map((item) => {
+    if (item.id !== itemId) return item;
+    if (itemTxns.length === 0) {
+      return { ...item, lastPrice: 0, lastPurchasedDate: '' };
+    }
+    const latestTxn = itemTxns[itemTxns.length - 1];
+    return {
+      ...item,
+      lastPrice: latestTxn.pricePerUnit,
+      lastPurchasedDate: latestTxn.date.split('T')[0],
+    };
+  });
+
+  return { updatedTxns, updatedItems };
+}
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function ShopProvider({ children }: { children: React.ReactNode }) {
@@ -257,8 +308,6 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         ? currentItems.find((i) => i.id === item.id)
         : currentItems.find((i) => i.name.toLowerCase() === item.name.toLowerCase());
 
-      const trend = getPriceTrend(pricePerUnit, resolvedItem?.lastPrice);
-
       if (!resolvedItem) {
         // New item – create it
         resolvedItem = {
@@ -270,13 +319,6 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
           category: item.category || 'General',
         };
         currentItems = [...currentItems, resolvedItem];
-      } else {
-        // Existing item – update last price
-        currentItems = currentItems.map((i) =>
-          i.id === resolvedItem!.id
-            ? { ...i, lastPrice: pricePerUnit, lastPurchasedDate: date }
-            : i
-        );
       }
 
       // 2. Resolve Shop
@@ -308,16 +350,23 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         totalCost,
         unit,
         date,
-        priceTrend: trend,
+        priceTrend: 'stable', // Recalculated below
         shopId,
         shopName,
       };
 
-      // 4. Persist everything
-      const updatedTransactions = [newTransaction, ...transactions]; // newest first
+      // 4. Recalculate trends and item stats chronologically
+      const tempTxns = [newTransaction, ...transactions];
+      const { updatedTxns, updatedItems } = recalculateLocalItemStats(resolvedItem.id, tempTxns, currentItems);
+
+      // Sort newest-first (descending date)
+      const sortedTxns = [...updatedTxns].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
       await Promise.all([
-        persistItems(currentItems),
-        persistTransactions(updatedTransactions),
+        persistItems(updatedItems),
+        persistTransactions(sortedTxns),
       ]);
     },
     [items, transactions, shops, persistItems, persistTransactions, persistShops]
@@ -329,6 +378,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       let currentShops = [...shops];
       let newTransactions = [];
       let shopsChanged = false;
+      const touchedItemIds = new Set<string>();
 
       for (const payload of payloads) {
         const { item, shop, pricePerUnit, quantity, totalCost, unit, date, id } = payload;
@@ -337,8 +387,6 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         let resolvedItem: Item | undefined = item.id
           ? currentItems.find((i) => i.id === item.id)
           : currentItems.find((i) => i.name.toLowerCase() === item.name.toLowerCase());
-
-        const trend = getPriceTrend(pricePerUnit, resolvedItem?.lastPrice);
 
         if (!resolvedItem) {
           resolvedItem = {
@@ -350,14 +398,9 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
             category: item.category || 'General',
           };
           currentItems.push(resolvedItem);
-        } else {
-          const rItem = resolvedItem; // for typescript
-          currentItems = currentItems.map((i) =>
-            i.id === rItem.id
-              ? { ...i, lastPrice: pricePerUnit, lastPurchasedDate: date }
-              : i
-          );
         }
+        
+        touchedItemIds.add(resolvedItem.id);
 
         // 2. Resolve Shop
         let shopId: string | undefined;
@@ -386,24 +429,156 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
           totalCost,
           unit,
           date,
-          priceTrend: trend,
+          priceTrend: 'stable' as const, // Recalculated below
           shopId,
           shopName,
         });
       }
 
-      // 4. Persist everything
-      const updatedTransactions = [...newTransactions, ...transactions].sort(
+      // 4. Combine all transactions
+      let updatedTxns = [...newTransactions, ...transactions];
+
+      // 5. Recalculate stats/trends for all touched item IDs
+      for (const itemId of touchedItemIds) {
+        const res = recalculateLocalItemStats(itemId, updatedTxns, currentItems);
+        updatedTxns = res.updatedTxns;
+        currentItems = res.updatedItems;
+      }
+
+      // Sort chronological descending (newest first)
+      const sortedTxns = [...updatedTxns].sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
-      
+
       await Promise.all([
         persistItems(currentItems),
-        persistTransactions(updatedTransactions),
+        persistTransactions(sortedTxns),
         shopsChanged ? persistShops(currentShops) : Promise.resolve(),
       ]);
     },
     [items, transactions, shops, persistItems, persistTransactions, persistShops]
+  );
+
+  const updatePurchase = useCallback(
+    async (txnId: string, payload: {
+      date: string;
+      item: { id?: string; name: string };
+      shop?: { id?: string; name?: string };
+      pricePerUnit: number;
+      quantity: number;
+      totalCost: number;
+      unit: string;
+    }) => {
+      // Find original transaction
+      const originalTxn = transactions.find(t => t.id === txnId);
+      if (!originalTxn) return;
+
+      const oldItemId = originalTxn.itemId;
+
+      let currentItems = [...items];
+      let currentShops = [...shops];
+
+      // Resolve or create item
+      let resolvedItem = payload.item.id
+        ? currentItems.find((i) => i.id === payload.item.id)
+        : currentItems.find((i) => i.name.toLowerCase() === payload.item.name.toLowerCase());
+
+      if (!resolvedItem) {
+        resolvedItem = {
+          id: payload.item.id || generateId('item'),
+          name: payload.item.name,
+          unit: payload.unit,
+          lastPrice: payload.pricePerUnit,
+          lastPurchasedDate: payload.date,
+          category: 'General',
+        };
+        currentItems = [...currentItems, resolvedItem];
+      }
+
+      // Resolve or create shop
+      let shopId: string | undefined;
+      let shopName: string | undefined;
+      if (payload.shop && typeof payload.shop.name === 'string') {
+        const shopIdInput = payload.shop.id;
+        const shopNameInput = payload.shop.name;
+        let resolvedShop = shopIdInput
+          ? currentShops.find((s) => s.id === shopIdInput)
+          : currentShops.find((s) => s.name.toLowerCase() === shopNameInput.toLowerCase());
+
+        if (!resolvedShop) {
+          const newShop = { id: shopIdInput || generateId('shop'), name: shopNameInput };
+          currentShops = [...currentShops, newShop];
+          await persistShops(currentShops);
+          resolvedShop = newShop;
+        }
+        shopId = resolvedShop.id;
+        shopName = resolvedShop.name;
+      }
+
+      // Update the transaction in array
+      let updatedTxns = transactions.map((t) =>
+        t.id === txnId
+          ? {
+              ...t,
+              itemId: resolvedItem!.id,
+              itemName: resolvedItem!.name,
+              pricePerUnit: payload.pricePerUnit,
+              quantity: payload.quantity,
+              totalCost: payload.totalCost,
+              unit: payload.unit,
+              date: payload.date,
+              shopId,
+              shopName,
+            }
+          : t
+      );
+
+      // Recalculate stats for new item
+      const res1 = recalculateLocalItemStats(resolvedItem.id, updatedTxns, currentItems);
+      updatedTxns = res1.updatedTxns;
+      currentItems = res1.updatedItems;
+
+      // Recalculate stats for old item if changed
+      if (oldItemId !== resolvedItem.id) {
+        const res2 = recalculateLocalItemStats(oldItemId, updatedTxns, currentItems);
+        updatedTxns = res2.updatedTxns;
+        currentItems = res2.updatedItems;
+      }
+
+      // Sort transactions descending by date
+      updatedTxns.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      await Promise.all([
+        persistItems(currentItems),
+        persistTransactions(updatedTxns),
+      ]);
+    },
+    [items, transactions, shops, persistItems, persistTransactions, persistShops]
+  );
+
+  const deletePurchase = useCallback(
+    async (txnId: string) => {
+      const originalTxn = transactions.find(t => t.id === txnId);
+      if (!originalTxn) return;
+
+      const itemId = originalTxn.itemId;
+
+      let currentItems = [...items];
+      let updatedTxns = transactions.filter(t => t.id !== txnId);
+
+      const res = recalculateLocalItemStats(itemId, updatedTxns, currentItems);
+      updatedTxns = res.updatedTxns;
+      currentItems = res.updatedItems;
+
+      // Sort transactions descending by date
+      updatedTxns.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      await Promise.all([
+        persistItems(currentItems),
+        persistTransactions(updatedTxns),
+      ]);
+    },
+    [items, transactions, persistItems, persistTransactions]
   );
 
   // ── Read Helpers ──────────────────────────────────────────────────────────
@@ -446,6 +621,8 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         addPurchase,
         addBatchPurchases,
+        updatePurchase,
+        deletePurchase,
         getMonthlyTotal,
         getItemHistory,
         getRecentTransactions,

@@ -3,9 +3,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/design';
 import { View, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
   const tabBarHeight = 60 + insets.bottom;
   const tabBarPaddingBottom = insets.bottom > 0 ? insets.bottom : 8;
 
@@ -13,13 +15,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
+        tabBarInactiveTintColor: isDark ? '#64748B' : colors.textTertiary,
         tabBarStyle: {
           height: tabBarHeight,
           paddingBottom: tabBarPaddingBottom,
           paddingTop: 8,
-          backgroundColor: colors.white,
-          borderTopColor: colors.border,
+          backgroundColor: isDark ? '#1E293B' : colors.white,
+          borderTopColor: isDark ? '#334155' : colors.border,
           ...Platform.select({
             ios: {
               shadowColor: colors.black,

@@ -200,13 +200,16 @@ export default function ScanReviewScreen() {
               />
             </View>
             <View style={styles.infoCol}>
-              <Text style={styles.label}>Date</Text>
+              <Text style={styles.label}>Receipt Date</Text>
               <TextInput
-                style={styles.inputLarge}
+                style={[styles.inputLarge, { color: '#4F46E5' }]}
                 value={receiptDate}
                 onChangeText={setReceiptDate}
                 placeholder="YYYY-MM-DD"
               />
+              <Text style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                From scan · edit if wrong
+              </Text>
             </View>
           </View>
         </View>

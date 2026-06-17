@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "start": "npx expo start",
-    "dev": "npx expo start --web --port 3000",
+    "dev": "npx expo start --web --port 3001",
     "start:web": "npx expo start --web",
     "start:ios": "npx expo start --ios",
     "start:android": "npx expo start --android",

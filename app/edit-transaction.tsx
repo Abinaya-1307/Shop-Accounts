@@ -7,21 +7,52 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Container, Input, Button } from '@/components/ui';
 import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
-import { useCreateTransaction } from '@/hooks/useData';
-import { useRouter } from 'expo-router';
+import { useShopContext } from '@/context/ShopContext';
+import { useUpdateTransaction, useDeleteTransaction } from '@/hooks/useData';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { API_URL as API } from '@/lib/config';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 
-export default function AddScreen() {
+export default function EditTransactionScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const tabBarHeight = 60 + insets.bottom;
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { transactions, isLoading: isContextLoading } = useShopContext();
+  const updateTxn = useUpdateTransaction();
+  const deleteTxn = useDeleteTransaction();
 
-  const createTxn = useCreateTransaction();
+  const [txn, setTxn] = useState<any>(null);
+  const [isTxnLoading, setIsTxnLoading] = useState(true);
+
+  // Load original transaction
+  useEffect(() => {
+    if (!id) return;
+    
+    // Check if it's already in the local context
+    const foundTxn = transactions.find((t) => t.id === id);
+    if (foundTxn) {
+      setTxn(foundTxn);
+      setIsTxnLoading(false);
+    } else {
+      // Fetch from backend API
+      setIsTxnLoading(true);
+      axios.get(`${API}/transactions/${id}`)
+        .then((res) => {
+          setTxn(res.data);
+        })
+        .catch((err) => {
+          console.error('[edit-transaction] Failed to fetch txn:', err);
+          Alert.alert('Error', 'Failed to load transaction details.');
+        })
+        .finally(() => {
+          setIsTxnLoading(false);
+        });
+    }
+  }, [id, transactions]);
 
   const [itemName, setItemName] = useState('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -35,14 +66,16 @@ export default function AddScreen() {
   const [selectedShop, setSelectedShop] = useState<any>(null);
   const [showShopSuggestions, setShowShopSuggestions] = useState(false);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [date, setDate] = useState('');
 
-  // ── Preload full item + shop lists once on mount ───────────────────────────
-  // All filtering is done in-memory so suggestions appear on every keystroke
-  // with zero network latency.
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
   const [allItems, setAllItems] = useState<any[]>([]);
   const [allShops, setAllShops] = useState<any[]>([]);
 
+  // ── Preload full item + shop lists on mount ───────────────────────────
   useEffect(() => {
     Promise.all([
       axios.get(`${API}/items/all`).catch(() => ({ data: [] })),
@@ -52,6 +85,32 @@ export default function AddScreen() {
       setAllShops(shopsRes.data ?? []);
     });
   }, []);
+
+  // Prepopulate form values once transaction is loaded
+  useEffect(() => {
+    if (txn) {
+      setItemName(txn.itemName);
+      setPricePerUnit(String(txn.pricePerUnit));
+      setQuantity(String(txn.quantity));
+      setUnit(txn.unit);
+      setShopName(txn.shopName || '');
+      setDate(txn.date.split('T')[0]);
+
+      // Attempt to resolve selectedItem in suggestions list
+      if (allItems.length > 0) {
+        const matchingItem = allItems.find((i) => i.id === txn.itemId);
+        if (matchingItem) {
+          setSelectedItem(matchingItem);
+        }
+      }
+      if (allShops.length > 0 && txn.shopId) {
+        const matchingShop = allShops.find((s) => s.id === txn.shopId);
+        if (matchingShop) {
+          setSelectedShop(matchingShop);
+        }
+      }
+    }
+  }, [txn, allItems, allShops]);
 
   // ── Instant in-memory filtering (no debounce, no network) ─────────────────
   const itemSuggestions = useMemo(() => {
@@ -80,114 +139,98 @@ export default function AddScreen() {
     if (!selectedItem || !pricePerUnit) return null;
     const current = parseFloat(pricePerUnit);
     const last = selectedItem.last_price;
-    if (!last) return null;
+    if (!last || last === current) return null;
     return current - last;
   }, [selectedItem, pricePerUnit]);
 
   const handleSave = async () => {
-    if (!itemName || !pricePerUnit || !quantity) {
+    if (!itemName || !pricePerUnit || !quantity || !date) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
-    const priceTrend: 'stable' | 'increase' | 'decrease' = !priceDiff ? 'stable' : priceDiff > 0 ? 'increase' : 'decrease';
+    const parsedDate = date.includes('T') ? date : `${date}T12:00:00.000Z`;
+
     const payload = {
-      id: `txn_${Date.now()}`,
-      date: new Date().toISOString(),
-      item: selectedItem
-        ? { id: selectedItem.id, name: selectedItem.name }
-        : { name: itemName },
-      shop: selectedShop
-        ? { id: selectedShop.id, name: selectedShop.name }
-        : shopName ? { name: shopName } : null,
+      date: parsedDate,
+      itemName,
+      shopName: shopName || null,
       pricePerUnit: parseFloat(pricePerUnit),
       quantity: parseFloat(quantity),
       totalCost: parseFloat(totalCost),
       unit,
-      priceTrend,
     };
 
     setIsSaving(true);
     try {
-      const { data: savedData } = await axios.post(`${API}/new`, payload);
+      // 1. Update backend
+      await axios.put(`${API}/transactions/${id}`, payload);
 
-      // ── Optimistically update the local preloaded lists so the new
-      //    item / shop appears in suggestions immediately on the next
-      //    purchase without waiting for a remount or re-fetch. ─────────────
-      if (!selectedItem) {
-        // Brand-new item — add it to allItems right away
-        const newItemEntry = {
-          id: savedData?.itemId ?? `item_${Date.now()}`,
-          name: itemName,
-          unit,
-          category: 'General',
-          last_price: parseFloat(pricePerUnit),
-          last_purchased_date: new Date().toISOString().split('T')[0],
-        };
-        setAllItems(prev =>
-          prev.some(i => i.name.toLowerCase() === itemName.toLowerCase())
-            ? prev.map(i =>
-                i.name.toLowerCase() === itemName.toLowerCase()
-                  ? { ...i, last_price: parseFloat(pricePerUnit) }
-                  : i
-              )
-            : [...prev, newItemEntry]
-        );
-      } else {
-        // Existing item — update its cached last_price
-        setAllItems(prev =>
-          prev.map(i =>
-            i.id === selectedItem.id
-              ? { ...i, last_price: parseFloat(pricePerUnit) }
-              : i
-          )
-        );
-      }
-
-      if (payload.shop && !selectedShop) {
-        // Brand-new shop — add it to allShops right away
-        const newShopEntry = {
-          id: savedData?.shopId ?? `shop_${Date.now()}`,
-          name: payload.shop.name,
-        };
-        setAllShops(prev =>
-          prev.some(s => s.name.toLowerCase() === payload.shop!.name.toLowerCase())
-            ? prev
-            : [...prev, newShopEntry]
-        );
-      }
-
-      // Keep local context in sync so History/Reports tabs stay updated
-      await createTxn.mutateAsync({
+      // 2. Update local state context
+      await updateTxn.mutateAsync(id!, {
         ...payload,
-        item: payload.item,
-        shop: payload.shop ?? undefined,
+        item: selectedItem
+          ? { id: selectedItem.id, name: selectedItem.name }
+          : { name: itemName },
+        shop: selectedShop
+          ? { id: selectedShop.id, name: selectedShop.name }
+          : shopName ? { name: shopName } : undefined,
       });
 
-      router.replace('/(tabs)');
+      router.back();
     } catch (error) {
-      console.error('Failed to save transaction:', error);
-      Alert.alert('Error', 'Failed to save purchase. Is the server running?');
+      console.error('Failed to update transaction:', error);
+      Alert.alert('Error', 'Failed to update transaction. Is the server running?');
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleDelete = async () => {
+    setShowDeleteModal(false);
+    setIsDeleting(true);
+    try {
+      // 1. Delete on backend
+      await axios.delete(`${API}/transactions/${id}`);
+
+      // 2. Delete locally
+      await deleteTxn.mutateAsync(id!);
+
+      router.back();
+    } catch (error) {
+      console.error('Failed to delete transaction:', error);
+      Alert.alert('Error', 'Failed to delete transaction.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const UNITS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'nos'];
 
+  if (isContextLoading || isTxnLoading || !txn) {
+    return (
+      <Container safeArea padding="lg" style={styles.centered}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </Container>
+    );
+  }
+
   return (
-    <Container safeArea edges={['top', 'left', 'right']} padding="lg">
+    <Container safeArea padding="lg">
       <View style={styles.header}>
-        <Text style={styles.title}>New Purchase</Text>
-        <TouchableOpacity onPress={handleSave} disabled={isSaving}>
-          <Text style={[styles.saveText, isSaving && { opacity: 0.4 }]}>Save</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Edit Purchase</Text>
+        <TouchableOpacity onPress={handleSave} disabled={isSaving || isDeleting}>
+          <Text style={[styles.saveText, (isSaving || isDeleting) && { opacity: 0.4 }]}>Save</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight + spacing.lg }]}
+        contentContainerStyle={styles.scrollContent}
       >
         {/* ── Item Search ── */}
         <Text style={styles.fieldLabel}>Item Name</Text>
@@ -288,8 +331,8 @@ export default function AddScreen() {
           ))}
         </View>
 
-        {/* ── Shop Name (full width, below other fields) ── */}
-        <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>Shop Name</Text>
+        {/* ── Shop Name ── */}
+        <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Shop Name</Text>
         <Input
           placeholder="e.g. Siva Traders"
           value={shopName}
@@ -319,6 +362,15 @@ export default function AddScreen() {
           </View>
         )}
 
+        {/* ── Date Input ── */}
+        <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Purchase Date (YYYY-MM-DD)</Text>
+        <Input
+          placeholder="YYYY-MM-DD"
+          value={date}
+          onChangeText={setDate}
+          leftIcon={<Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />}
+        />
+
         {/* ── Total Display ── */}
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>Total Purchase Value</Text>
@@ -330,20 +382,47 @@ export default function AddScreen() {
           size="lg"
           onPress={handleSave}
           loading={isSaving}
+          disabled={isSaving || isDeleting}
         >
-          Add Item to Diary
+          Save Changes
         </Button>
+
+        {/* ── Delete Button ── */}
+        <TouchableOpacity
+          onPress={() => setShowDeleteModal(true)}
+          style={styles.deleteButton}
+          disabled={isSaving || isDeleting}
+        >
+          <Ionicons name="trash-outline" size={18} color={colors.error} />
+          <Text style={styles.deleteButtonText}>Delete Purchase</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      <DeleteConfirmationModal
+        visible={showDeleteModal}
+        title="Delete Purchase"
+        message="Are you sure you want to remove this purchase record? This will update chronological trends and item statistics."
+        onCancel={() => setShowDeleteModal(false)}
+        onConfirm={handleDelete}
+      />
     </Container>
   );
 }
 
 const styles = StyleSheet.create({
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.lg,
+  },
+  backBtn: {
+    padding: spacing.xs,
   },
   title: {
     ...typography.h2,
@@ -476,5 +555,21 @@ const styles = StyleSheet.create({
     ...typography.display,
     color: colors.primary,
     fontSize: 32,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: borderRadius.lg,
+    backgroundColor: 'transparent',
+  },
+  deleteButtonText: {
+    ...typography.bodyBold,
+    color: colors.error,
   },
 });

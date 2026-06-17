@@ -3,7 +3,7 @@
  */
 
 import { ReactNode } from 'react';
-import { ViewStyle } from 'react-native';
+import { StyleProp, ViewStyle } from 'react-native';
 
 export type ContainerPadding = 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
 export type SafeAreaEdges = 'top' | 'bottom' | 'left' | 'right';
@@ -47,7 +47,7 @@ export interface ContainerProps {
   /**
    * Additional style overrides
    */
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 
   /**
    * Test ID for automated testing

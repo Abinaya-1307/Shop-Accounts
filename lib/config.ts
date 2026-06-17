@@ -28,7 +28,7 @@ const getDevApiUrl = () => {
 };
 
 const DEV_API_URL = getDevApiUrl();
-const PROD_API_URL = 'https://shop-account-backend.onrender.com';
+const PROD_API_URL = 'https://shop-account-backend.vercel.app';
 
 export const API_URL: string = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
