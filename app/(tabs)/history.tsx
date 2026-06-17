@@ -16,11 +16,15 @@ import { colors, typography, spacing, borderRadius } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL as API } from '@/lib/config';
 import { RefreshControl } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ActiveTab = 'items' | 'byshop';
 
 export default function HistoryScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 60 + insets.bottom;
+
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('items');
 
@@ -118,7 +122,7 @@ export default function HistoryScreen() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <Container safeArea padding="lg">
+    <Container safeArea edges={['top', 'left', 'right']} padding="lg">
       <Text style={styles.title}>History</Text>
 
       {/* ── Tab Switcher ── */}
@@ -182,7 +186,7 @@ export default function HistoryScreen() {
                   data={filteredItems}
                   keyExtractor={(item) => item.id}
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.listContent}
+                  contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + spacing.lg }]}
                   refreshControl={
                     <RefreshControl
                       refreshing={refreshing}
@@ -261,7 +265,7 @@ export default function HistoryScreen() {
           {activeTab === 'byshop' && (
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + spacing.lg }]}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
@@ -338,6 +342,21 @@ export default function HistoryScreen() {
                                   }}
                                 >
                                   <Ionicons name="share-social-outline" size={18} color={colors.primary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.shareBtn}
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    router.push({
+                                      pathname: '/shop-session',
+                                      params: {
+                                        shopName: shopGroup.shopName,
+                                        date: dateGroup.date,
+                                      },
+                                    });
+                                  }}
+                                >
+                                  <Ionicons name="create-outline" size={18} color={colors.primary} />
                                 </TouchableOpacity>
                                 <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                               </View>

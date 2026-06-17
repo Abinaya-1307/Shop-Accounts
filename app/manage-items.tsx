@@ -69,7 +69,7 @@ export default function ManageItemsScreen() {
   const borderColor = isDark ? '#334155' : colors.border;
 
   return (
-    <Container safeArea edges={['top']} style={{ backgroundColor: bg }}>
+    <Container safeArea edges={['top', 'bottom', 'left', 'right']} style={{ backgroundColor: bg }}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: borderColor }]}>
         <TouchableOpacity style={[styles.backBtn, { backgroundColor: isDark ? '#1E293B' : colors.backgroundSecondary }]} onPress={() => router.back()}>
